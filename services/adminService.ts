@@ -309,7 +309,8 @@ export const adminService = {
     const { data: authData, error: authError } = await supabase.auth.signUp({
       email: data.email,
       password,
-      options: { data: { first_name: userData.firstName, last_name: userData.lastName, role: 'teacher' } }
+      // Fix: Changed "userData" to "data" to match method arguments
+      options: { data: { first_name: data.firstName, last_name: data.lastName, role: 'teacher' } }
     });
     if (authError) {
       setIgnoreAuthEvents(false);
