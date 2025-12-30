@@ -1,5 +1,5 @@
 
-import React, { createContext, useContext, useState, useEffect } from 'react';
+import React, { createContext, useContext, useState, useEffect, useRef } from 'react';
 import { User, AuthState } from '../types';
 import { supabase } from '../lib/supabase';
 import { authService } from '../services/authService';
@@ -9,6 +9,7 @@ interface AuthContextType extends AuthState {
   register: (data: any) => Promise<any>;
   logout: () => void;
   updateProfile: (data: Partial<User>) => Promise<void>;
+  setIgnoreAuthEvents: (ignore: boolean) => void;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -20,6 +21,13 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     isAuthenticated: false,
     isLoading: true,
   });
+  
+  const ignoreAuthEvents = useRef(false);
+
+  const setIgnoreAuthEvents = (ignore: boolean) => {
+    console.log(`[AuthContext] ignoreAuthEvents set to: ${ignore}`);
+    ignoreAuthEvents.current = ignore;
+  };
 
   const loadUserProfile = async (token: string) => {
     try {
@@ -67,6 +75,11 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
       console.log(`[AuthContext] Event: ${event}`);
       
+      if (ignoreAuthEvents.current) {
+        console.log("[AuthContext] IGNORING event because ignoreAuthEvents is TRUE");
+        return;
+      }
+      
       if (session) {
         // If we already have a user and the token hasn't changed, don't re-fetch
         if (state.user && state.token === session.access_token) {
@@ -92,7 +105,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     setState(s => ({ ...s, isLoading: true }));
     try {
       await authService.login(email, pass);
-      // State is updated by onAuthStateChange
     } catch (err) {
       setState(s => ({ ...s, isLoading: false }));
       throw err;
@@ -139,7 +151,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   };
 
   return (
-    <AuthContext.Provider value={{ ...state, login, register, logout, updateProfile }}>
+    <AuthContext.Provider value={{ ...state, login, register, logout, updateProfile, setIgnoreAuthEvents }}>
       {children}
     </AuthContext.Provider>
   );

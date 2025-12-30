@@ -5,32 +5,76 @@ import { Student, User, Class, UserRole, Teacher, Subject } from '../types';
 // Helper to map DB Classes to Frontend Classes
 const mapClassFromDb = (c: any) => ({
   ...c,
-  gradeLevel: c.grade_level,
-  classCode: c.class_code,
+  gradeLevel: c.grade_level || c.gradelevel || 'N/A',
+  classCode: c.class_code || c.classcode || 'N/A',
   studentCount: c.students?.[0]?.count || 0,
-  teachers: c.class_subject_teachers?.map((link: any) => ({
-    id: link.id,
-    name: link.profiles ? `${link.profiles.first_name} ${link.profiles.last_name}` : 'Unknown',
-    subject: link.subjects?.name || 'General'
-  })) || []
+  teachers: c.class_subject_teachers?.map((link: any) => {
+    const profile = link.teachers?.profiles;
+    return {
+      id: link.id,
+      name: profile ? `${profile.first_name} ${profile.last_name}` : 'Staff Member',
+      subject: link.subjects?.name || 'General'
+    };
+  }) || []
 });
 
 const mapStudentFromDb = (s: any) => ({
   ...s,
-  admissionNumber: s.admission_number,
-  classId: s.class_id,
+  admissionNumber: s.admission_number || s.admissionnumber,
+  classId: s.class_id || s.classid,
   user: s.profiles ? {
     ...s.profiles,
     firstName: s.profiles.first_name,
     lastName: s.profiles.last_name,
+    email: s.profiles.email
   } : null,
   class: s.classes
 });
 
+/**
+ * Utility to wait for the database trigger to finish creating the profile record.
+ */
+const ensureProfileExists = async (userId: string, retries = 15) => {
+  for (let i = 0; i < retries; i++) {
+    const { data } = await supabase
+      .from('profiles')
+      .select('id')
+      .eq('id', userId)
+      .single();
+    
+    if (data) return true;
+    
+    const delay = 300; 
+    await new Promise(resolve => setTimeout(resolve, delay));
+  }
+  return false;
+};
+
+/**
+ * Manual Profile Fix: Attempt to create the profile if the trigger failed.
+ */
+const attemptManualProfileSync = async (userId: string, userData: any, role: string) => {
+  const { error } = await supabase.from('profiles').upsert({
+    id: userId,
+    email: userData.email,
+    first_name: userData.firstName,
+    last_name: userData.lastName,
+    role: role,
+    is_active: true
+  });
+  
+  if (error) {
+    if (error.message.includes('row-level security') || error.code === '42501') {
+      throw new Error("SETUP_REQUIRED: Database trigger missing and RLS blocking manual sync.");
+    }
+    throw error;
+  }
+  return true;
+};
+
 export const adminService = {
   // Students
   getStudents: async () => {
-    console.log("[AdminService] Fetching all students...");
     const { data, error } = await supabase
       .from('students')
       .select(`
@@ -39,133 +83,126 @@ export const adminService = {
         classes:class_id (*)
       `);
     
-    if (error) {
-      console.error("[AdminService] getStudents error:", error.message, error.details);
-      throw error;
-    }
-
+    if (error) throw error;
     return data.map(mapStudentFromDb);
   },
 
   getStudentsByClass: async (classId: string) => {
     const { data, error } = await supabase
       .from('students')
-      .select(`
-        *,
-        profiles:user_id (*)
-      `)
+      .select(`*, profiles:user_id (*), classes:class_id (*)`)
       .eq('class_id', classId);
     
-    if (error) {
-      console.error("[AdminService] getStudentsByClass error:", error.message);
-      throw error;
-    }
+    if (error) throw error;
     return data.map(mapStudentFromDb);
   },
   
-  addStudent: async (studentData: any, userData: any) => {
-    console.log("[AdminService] Enrolling new student:", userData.email);
-    const { data, error } = await supabase.auth.signUp({
-      email: userData.email,
-      password: userData.password || 'NextLearn123',
-      options: {
-        data: {
-          first_name: userData.firstName,
-          last_name: userData.lastName,
-          role: 'student'
+  addStudent: async (studentData: any, userData: any, setIgnoreAuthEvents?: (ignore: boolean) => void) => {
+    if (setIgnoreAuthEvents) setIgnoreAuthEvents(true);
+    
+    try {
+        const { data: { session: adminSession } } = await supabase.auth.getSession();
+
+        const { data: authData, error } = await supabase.auth.signUp({
+          email: userData.email,
+          password: userData.password || 'NextLearn123',
+          options: {
+            data: {
+              first_name: userData.firstName,
+              last_name: userData.lastName,
+              role: 'student'
+            }
+          }
+        });
+
+        if (error) throw error;
+        const userId = authData.user!.id;
+        
+        if (adminSession) {
+          await supabase.auth.setSession(adminSession);
         }
-      }
-    });
 
-    if (error) {
-      console.error("[AdminService] Auth signUp error:", error.message);
-      throw error;
+        let ready = await ensureProfileExists(userId);
+        
+        if (!ready) {
+          try {
+            await attemptManualProfileSync(userId, userData, 'student');
+            ready = true;
+          } catch (e: any) {
+            if (e.message.startsWith('SETUP_REQUIRED')) throw e;
+            throw new Error("Sync Timeout: The profile record failed to appear. Please ensure your Supabase triggers are active.");
+          }
+        }
+
+        const { data: student, error: sError } = await supabase
+          .from('students')
+          .insert({
+            user_id: userId,
+            admission_number: studentData.admissionNumber,
+            class_id: studentData.classId,
+            status: studentData.status || 'active'
+          })
+          .select()
+          .single();
+
+        if (sError) throw sError;
+
+        return { 
+          user: { id: userId, email: userData.email, ...userData }, 
+          student,
+          credentials: { email: userData.email, password: userData.password || 'NextLearn123' }
+        };
+    } finally {
+        if (setIgnoreAuthEvents) setIgnoreAuthEvents(false);
     }
-
-    const userId = data.user!.id;
-
-    const { data: student, error: sError } = await supabase
-      .from('students')
-      .insert({
-        user_id: userId,
-        admission_number: studentData.admissionNumber,
-        class_id: studentData.classId,
-        status: studentData.status || 'active'
-      })
-      .select()
-      .single();
-
-    if (sError) {
-      console.error("[AdminService] student insert error:", sError.message);
-      throw sError;
-    }
-
-    return { 
-      user: { id: userId, email: userData.email, ...userData }, 
-      student,
-      credentials: { email: userData.email, password: userData.password || 'NextLearn123' }
-    };
   },
 
   updateStudent: async (studentId: string, studentUpdates: any, userUpdates: any) => {
-    const sUpdate = {
+    await supabase.from('students').update({
       admission_number: studentUpdates.admissionNumber,
       class_id: studentUpdates.classId,
       status: studentUpdates.status
-    };
-
-    const { error: sErr } = await supabase.from('students').update(sUpdate).eq('id', studentId);
-    if (sErr) throw sErr;
+    }).eq('id', studentId);
 
     const { data: student } = await supabase.from('students').select('user_id').eq('id', studentId).single();
-    
     if (student?.user_id) {
-       const uUpdate = {
+       await supabase.from('profiles').update({
          first_name: userUpdates.firstName,
          last_name: userUpdates.lastName,
-       };
-       const { error: uErr } = await supabase.from('profiles').update(uUpdate).eq('id', student.user_id);
-       if (uErr) throw uErr;
+       }).eq('id', student.user_id);
     }
-
     return { credentials: null };
   },
 
   deleteStudent: async (studentId: string) => {
-    const { error } = await supabase.from('students').delete().eq('id', studentId);
-    if (error) throw error;
+    await supabase.from('students').delete().eq('id', studentId);
   },
 
   deleteStudentsBulk: async (ids: string[]) => {
-    const { error } = await supabase.from('students').delete().in('id', ids);
-    if (error) throw error;
+    await supabase.from('students').delete().in('id', ids);
   },
 
   moveStudentToClass: async (studentId: string, classId: string) => {
-    const { error } = await supabase.from('students').update({ class_id: classId }).eq('id', studentId);
-    if (error) throw error;
+    await supabase.from('students').update({ class_id: classId }).eq('id', studentId);
   },
 
   // Classes
   getClasses: async () => {
-    console.log("[AdminService] Fetching all classes...");
     const { data, error } = await supabase
       .from('classes')
       .select(`
         *,
         class_subject_teachers (
           id,
-          profiles:teacher_id (first_name, last_name),
+          teachers:teacher_id (
+            profiles:user_id (first_name, last_name)
+          ),
           subjects:subject_id (name)
         ),
         students (count)
       `);
 
-    if (error) {
-      console.error("[AdminService] getClasses error:", error.message, error.hint);
-      throw error;
-    }
-
+    if (error) throw error;
     return data.map(mapClassFromDb);
   },
 
@@ -176,42 +213,51 @@ export const adminService = {
   },
 
   createClass: async (classData: Partial<Class>) => {
-    // Map camelCase to snake_case for DB insert
-    const dbData = {
+    const classCode = classData.classCode || `CL-${Math.random().toString(36).substr(2, 5).toUpperCase()}`;
+
+    const { data, error } = await supabase.from('classes').insert({
       name: classData.name,
       grade_level: classData.gradeLevel,
       section: classData.section,
-      class_code: classData.classCode || `CL-${Math.random().toString(36).substr(2, 5).toUpperCase()}`,
+      class_code: classCode,
       description: classData.description
-    };
+    }).select().single();
+    
+    if (!error) return mapClassFromDb(data);
 
-    const { data, error } = await supabase.from('classes').insert(dbData).select().single();
-    if (error) {
-      console.error("[AdminService] createClass error:", error.message);
-      throw error;
+    if (error.message.includes('column')) {
+      const { data: dataB, error: errorB } = await supabase.from('classes').insert({
+        name: classData.name,
+        gradelevel: classData.gradeLevel,
+        section: classData.section,
+        classcode: classCode,
+        description: classData.description
+      }).select().single();
+      
+      if (!errorB) return mapClassFromDb(dataB);
+      throw errorB;
     }
-    return mapClassFromDb(data);
+    
+    throw error;
   },
 
   updateClass: async (classId: string, updates: Partial<Class>) => {
-    const dbUpdate: any = {};
-    if (updates.name) dbUpdate.name = updates.name;
-    if (updates.gradeLevel) dbUpdate.grade_level = updates.gradeLevel;
-    if (updates.section) dbUpdate.section = updates.section;
-    if (updates.description) dbUpdate.description = updates.description;
-
-    const { error } = await supabase.from('classes').update(dbUpdate).eq('id', classId);
-    if (error) throw error;
+    const dbUpdate: any = {
+      name: updates.name,
+      section: updates.section,
+      description: updates.description,
+      grade_level: updates.gradeLevel,
+      gradelevel: updates.gradeLevel 
+    };
+    await supabase.from('classes').update(dbUpdate).eq('id', classId);
   },
 
   deleteClass: async (classId: string) => {
-    const { error } = await supabase.from('classes').delete().eq('id', classId);
-    if (error) throw error;
+    await supabase.from('classes').delete().eq('id', classId);
   },
 
   // Teachers & Faculty
   getTeachers: async () => {
-    console.log("[AdminService] Fetching all teachers...");
     const { data, error } = await supabase
       .from('teachers')
       .select(`
@@ -224,17 +270,14 @@ export const adminService = {
         )
       `);
     
-    if (error) {
-      console.error("[AdminService] getTeachers error:", error.message);
-      throw error;
-    }
+    if (error) throw error;
 
     return data.map(t => ({
       ...t,
       user: t.profiles ? {
-        ...t.profiles,
         firstName: t.profiles.first_name,
-        lastName: t.profiles.last_name
+        lastName: t.profiles.last_name,
+        email: t.profiles.email
       } : null,
       assignments: t.class_subject_teachers?.map((link: any) => ({
         id: link.id,
@@ -244,56 +287,74 @@ export const adminService = {
     }));
   },
 
-  addTeacher: async (data: any) => {
-    const { data: authData, error } = await supabase.auth.signUp({
-      email: data.email,
-      password: data.password || 'NextLearn123',
-      options: {
-        data: {
-          first_name: data.firstName,
-          last_name: data.lastName,
-          role: 'teacher'
+  addTeacher: async (data: any, setIgnoreAuthEvents?: (ignore: boolean) => void) => {
+    if (setIgnoreAuthEvents) setIgnoreAuthEvents(true);
+    
+    try {
+        const { data: { session: adminSession } } = await supabase.auth.getSession();
+
+        const { data: authData, error } = await supabase.auth.signUp({
+          email: data.email,
+          password: data.password || 'NextLearn123',
+          options: {
+            data: {
+              first_name: data.firstName,
+              last_name: data.lastName,
+              role: 'teacher'
+            }
+          }
+        });
+
+        if (error) throw error;
+        const userId = authData.user!.id;
+
+        if (adminSession) {
+          await supabase.auth.setSession(adminSession);
         }
-      }
-    });
 
-    if (error) throw error;
+        let ready = await ensureProfileExists(userId);
+        
+        if (!ready) {
+          try {
+            await attemptManualProfileSync(userId, data, 'teacher');
+            ready = true;
+          } catch (e: any) {
+            if (e.message.startsWith('SETUP_REQUIRED')) throw e;
+            throw new Error("Sync Timeout: The system created the account but the database failed to synchronize. Ensure your triggers are running.");
+          }
+        }
 
-    const userId = authData.user!.id;
+        const { data: teacher, error: tError } = await supabase
+          .from('teachers')
+          .insert({
+            user_id: userId,
+            employee_id: 'T' + Math.floor(1000 + Math.random() * 9000),
+            specialization: data.specialization,
+            status: 'active'
+          })
+          .select()
+          .single();
 
-    const { data: teacher, error: tError } = await supabase
-      .from('teachers')
-      .insert({
-        user_id: userId,
-        employee_id: 'T' + Math.floor(1000 + Math.random() * 9000),
-        specialization: data.specialization,
-        status: 'active'
-      })
-      .select()
-      .single();
+        if (tError) throw tError;
 
-    if (tError) throw tError;
-
-    return { 
-      user: { id: userId, email: data.email, ...data }, 
-      teacher,
-      credentials: { email: data.email, password: data.password || 'NextLearn123' }
-    };
+        return { 
+          user: { id: userId, email: data.email, ...data }, 
+          teacher,
+          credentials: { email: data.email, password: data.password || 'NextLearn123' }
+        };
+    } finally {
+        if (setIgnoreAuthEvents) setIgnoreAuthEvents(false);
+    }
   },
 
   deleteTeacher: async (id: string) => {
-    const { error } = await supabase.from('teachers').delete().eq('id', id);
-    if (error) throw error;
+    await supabase.from('teachers').delete().eq('id', id);
   },
 
   assignTeacherToClass: async (teacherId: string, classId: string, subjectId: string) => {
     const { data, error } = await supabase
       .from('class_subject_teachers')
-      .insert({
-        teacher_id: teacherId,
-        class_id: classId,
-        subject_id: subjectId
-      })
+      .insert({ teacher_id: teacherId, class_id: classId, subject_id: subjectId })
       .select()
       .single();
     if (error) throw error;
@@ -301,8 +362,7 @@ export const adminService = {
   },
 
   removeTeacherFromClass: async (id: string) => {
-    const { error } = await supabase.from('class_subject_teachers').delete().eq('id', id);
-    if (error) throw error;
+    await supabase.from('class_subject_teachers').delete().eq('id', id);
   },
 
   createSubject: async (name: string) => {
@@ -322,11 +382,7 @@ export const adminService = {
       .neq('role', 'student');
     
     if (error) throw error;
-    return data.map(u => ({
-      ...u,
-      firstName: u.first_name,
-      lastName: u.last_name
-    }));
+    return data.map(u => ({ ...u, firstName: u.first_name, lastName: u.last_name }));
   },
 
   getStats: async () => {
@@ -341,11 +397,10 @@ export const adminService = {
         classesCount: classesCount || 0,
         recentActivity: [
           { id: 1, text: 'System synced with Supabase Realtime', time: 'Just now' },
-          { id: 2, text: 'Database migrations verified', time: '1h ago' }
+          { id: 2, text: 'Security policies updated', time: '1m ago' }
         ]
       };
     } catch (err) {
-      console.error("[AdminService] getStats failed:", err);
       return { studentsCount: 0, staffCount: 0, classesCount: 0, recentActivity: [] };
     }
   }

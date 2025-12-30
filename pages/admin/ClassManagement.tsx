@@ -1,12 +1,14 @@
 
 import React, { useState, useEffect } from 'react';
 import { adminService } from '../../services/adminService';
+import { useAuth } from '../../context/AuthContext';
 import { Spinner } from '../../components/UI/Spinner';
 import { Alert } from '../../components/UI/Alert';
 import { getStoredSubjects } from '../../services/mockDb';
 import { Link } from 'react-router-dom';
 
 export const ClassManagement: React.FC = () => {
+  const { user: authUser, logout } = useAuth();
   const [classes, setClasses] = useState<any[]>([]);
   const [teachers, setTeachers] = useState<any[]>([]);
   const [subjects, setSubjects] = useState<any[]>([]);
@@ -36,7 +38,10 @@ export const ClassManagement: React.FC = () => {
       setSubjects(sData);
     } catch (err: any) {
       console.error("[ClassHub] Failed to fetch:", err);
-      setAlert({ type: 'error', message: `Database error: ${err.message || 'Unknown error'}` });
+      const msg = err.message?.includes('RLS') || err.message?.includes('security policy')
+        ? "Permissions Error: Your Supabase database is blocking this action. Use the 'Identity Fix' below."
+        : `Database error: ${err.message || 'Unknown error'}`;
+      setAlert({ type: 'error', message: msg });
     } finally {
       setLoading(false);
     }
@@ -60,7 +65,11 @@ export const ClassManagement: React.FC = () => {
       setClassForm({ name: '', gradeLevel: '', section: '' });
       await fetchData();
     } catch (err: any) {
-      setAlert({ type: 'error', message: `Creation failed: ${err.message}` });
+      let errorMsg = `Creation failed: ${err.message}`;
+      if (err.message?.includes('row-level security policy') || err.message?.includes('RLS')) {
+        errorMsg = `Critical: RLS Blocked. Your metadata role is '${authUser?.role}'. Supabase is still rejecting the request. Run the SQL Fix.`;
+      }
+      setAlert({ type: 'error', message: errorMsg });
       setLoading(false);
     }
   };
@@ -117,7 +126,43 @@ export const ClassManagement: React.FC = () => {
         </button>
       </header>
 
-      {alert && <Alert type={alert.type} message={alert.message} onClose={() => setAlert(null)} />}
+      {alert && (
+        <div className="space-y-4">
+          <Alert type={alert.type} message={alert.message} onClose={() => setAlert(null)} />
+          {alert.type === 'error' && alert.message.includes('RLS') && (
+            <div className="p-8 bg-slate-900 text-slate-300 rounded-[2.5rem] border border-slate-800 animate-in slide-in-from-top-4 shadow-2xl">
+                <div className="flex justify-between items-start mb-6">
+                   <p className="text-indigo-400 font-black uppercase tracking-widest text-xs"># Ultimate Identity Fix</p>
+                   <button onClick={logout} className="px-4 py-2 bg-indigo-600 text-white rounded-xl text-[10px] font-black uppercase tracking-widest hover:bg-indigo-700 transition-all">1. Logout & Re-Register</button>
+                </div>
+                <p className="mb-4 text-sm leading-relaxed">To fix the column error and the RLS block simultaneously, run this <strong>DO block</strong> in Supabase SQL Editor:</p>
+                
+                <div className="bg-black/60 p-6 rounded-2xl border border-slate-700 font-mono text-[10px] overflow-x-auto whitespace-pre mb-6">
+{`DO $$ BEGIN 
+  IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='classes' AND column_name='gradelevel') THEN
+    ALTER TABLE classes RENAME COLUMN gradelevel TO grade_level;
+  END IF;
+  IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='classes' AND column_name='classcode') THEN
+    ALTER TABLE classes RENAME COLUMN classcode TO class_code;
+  END IF;
+END $$;
+
+ALTER TABLE classes ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "Admin All Access" ON classes;
+CREATE POLICY "Admin All Access" ON classes FOR ALL TO authenticated
+USING (lower(auth.jwt() -> 'user_metadata' ->> 'role') IN ('admin', 'administrator'))
+WITH CHECK (lower(auth.jwt() -> 'user_metadata' ->> 'role') IN ('admin', 'administrator'));`}
+                </div>
+
+                <div className="p-5 bg-indigo-900/20 rounded-2xl border border-indigo-800/40">
+                  <p className="text-white font-bold text-xs mb-2">Browser Diagnostics:</p>
+                  <p className="text-[10px] font-mono">User: {authUser?.firstName} {authUser?.lastName}</p>
+                  <p className="text-[10px] font-mono">Metadata Role: {authUser?.role}</p>
+                </div>
+            </div>
+          )}
+        </div>
+      )}
 
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
         {classes.map(c => (
