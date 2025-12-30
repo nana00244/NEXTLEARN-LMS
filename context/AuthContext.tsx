@@ -21,42 +21,58 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     isLoading: true,
   });
 
+  const loadUserProfile = async (token: string) => {
+    try {
+      console.log("[AuthContext] Fetching profile for session...");
+      const userProfile = await authService.getCurrentUser();
+      
+      if (userProfile) {
+        setState({
+          token,
+          user: userProfile,
+          isAuthenticated: true,
+          isLoading: false,
+        });
+      } else {
+        console.warn("[AuthContext] Session exists but profile could not be resolved. Signing out.");
+        await supabase.auth.signOut();
+        setState({ token: null, user: null, isAuthenticated: false, isLoading: false });
+      }
+    } catch (err) {
+      console.error("[AuthContext] Profile load failed:", err);
+      setState(s => ({ ...s, isLoading: false }));
+    }
+  };
+
   useEffect(() => {
-    // Initial session check
     const initAuth = async () => {
       try {
+        console.log("[AuthContext] Checking initial session...");
         const { data: { session } } = await supabase.auth.getSession();
         
         if (session) {
-          const userProfile = await authService.getCurrentUser();
-          setState({
-            token: session.access_token,
-            user: userProfile,
-            isAuthenticated: !!userProfile,
-            isLoading: false,
-          });
+          await loadUserProfile(session.access_token);
         } else {
+          console.log("[AuthContext] No active session found.");
           setState(s => ({ ...s, isLoading: false }));
         }
       } catch (err) {
-        console.error("Auth initialization error:", err);
+        console.error("[AuthContext] Auth initialization error:", err);
         setState(s => ({ ...s, isLoading: false }));
       }
     };
 
     initAuth();
 
-    // Listen for auth changes
     const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
+      console.log(`[AuthContext] Event: ${event}`);
+      
       if (session) {
-        // Only trigger loading if we don't have a user yet or the token changed
-        const userProfile = await authService.getCurrentUser();
-        setState({
-          token: session.access_token,
-          user: userProfile,
-          isAuthenticated: !!userProfile,
-          isLoading: false,
-        });
+        // If we already have a user and the token hasn't changed, don't re-fetch
+        if (state.user && state.token === session.access_token) {
+          return;
+        }
+        await loadUserProfile(session.access_token);
       } else {
         setState({
           token: null,
@@ -76,6 +92,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     setState(s => ({ ...s, isLoading: true }));
     try {
       await authService.login(email, pass);
+      // State is updated by onAuthStateChange
     } catch (err) {
       setState(s => ({ ...s, isLoading: false }));
       throw err;
@@ -86,9 +103,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     setState(s => ({ ...s, isLoading: true }));
     try {
       const result = await authService.register(data);
-      // We don't manually set isLoading: false here because 
-      // onAuthStateChange will fire and update the state.
-      // If result indicates email confirmation is required, we do need to set it false.
       if (result?.emailConfirmationRequired) {
         setState(s => ({ ...s, isLoading: false }));
       }

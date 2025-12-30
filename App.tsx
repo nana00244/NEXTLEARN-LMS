@@ -44,28 +44,46 @@ const ProtectedRoute: React.FC<{
   children: React.ReactNode, 
   allowedRoles?: string[] 
 }> = ({ children, allowedRoles }) => {
-  const { isAuthenticated, isLoading, user, token } = useAuth();
+  const { isAuthenticated, isLoading, user } = useAuth();
 
-  // If we are globally loading, show spinner
-  if (isLoading) return <div className="min-h-screen flex items-center justify-center bg-slate-50 dark:bg-slate-950"><Spinner size="lg" /></div>;
+  // 1. App is currently deciding auth state
+  if (isLoading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-slate-50 dark:bg-slate-950">
+        <Spinner size="lg" />
+      </div>
+    );
+  }
   
-  // If no token exists, we are definitely not logged in
-  if (!token && !isAuthenticated) return <Navigate to="/login" replace />;
+  // 2. Not logged in
+  if (!isAuthenticated || !user) {
+    return <Navigate to="/login" replace />;
+  }
   
-  // If we have a token but no user profile yet, we are in a transition state (fetching profile)
-  // We should keep showing the spinner to prevent a blank page or unauthorized error
-  if (token && !user) return <div className="min-h-screen flex items-center justify-center bg-slate-50 dark:bg-slate-950"><Spinner size="lg" /></div>;
+  // 3. Logged in but doesn't have required permission
+  if (allowedRoles && !allowedRoles.includes(user.role)) {
+    return <Navigate to="/unauthorized" replace />;
+  }
 
-  // Final role check
-  if (allowedRoles && user && !allowedRoles.includes(user.role)) return <Navigate to="/unauthorized" replace />;
-
+  // 4. Authorized
   return <Layout>{children}</Layout>;
 };
 
 const PublicRoute: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const { isAuthenticated, isLoading, token } = useAuth();
-  if (isLoading) return <div className="min-h-screen flex items-center justify-center bg-slate-50 dark:bg-slate-950"><Spinner size="lg" /></div>;
-  if (token || isAuthenticated) return <Navigate to="/" replace />;
+  const { isAuthenticated, isLoading } = useAuth();
+  
+  if (isLoading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-slate-50 dark:bg-slate-950">
+        <Spinner size="lg" />
+      </div>
+    );
+  }
+
+  if (isAuthenticated) {
+    return <Navigate to="/" replace />;
+  }
+  
   return <Layout>{children}</Layout>;
 };
 
