@@ -1,4 +1,3 @@
-
 import { supabase, isConfigured } from '../lib/supabase';
 import { Student, User, Class, UserRole, Teacher, Subject } from '../types';
 import { 
@@ -150,6 +149,15 @@ export const adminService = {
     });
     if (authError) throw authError;
 
+    // Manually create profile to ensure FK constraints are met immediately
+    await supabase.from('profiles').upsert({
+      id: authData.user?.id,
+      email: userData.email,
+      first_name: userData.firstName,
+      last_name: userData.lastName,
+      role: 'student'
+    });
+
     const { data: student, error: studentError } = await supabase.from('students').insert({
       user_id: authData.user?.id,
       admission_number: studentData.admissionNumber,
@@ -162,7 +170,6 @@ export const adminService = {
   },
 
   updateStudent: async (id: string, studentData: any, userData: any): Promise<{ success: boolean; credentials?: { email: string; password: string } }> => {
-    // Fix: Defined a common credentials response object if a password was provided
     const credentials = userData.password ? { email: userData.email, password: userData.password } : undefined;
 
     if (!isConfigured) {
@@ -190,7 +197,6 @@ export const adminService = {
     }).eq('id', id);
     if (studentError) throw studentError;
 
-    // Supabase Auth Email/Password updates usually require separate handling or admin API
     return { success: true, credentials };
   },
 
@@ -309,13 +315,21 @@ export const adminService = {
     const { data: authData, error: authError } = await supabase.auth.signUp({
       email: data.email,
       password,
-      // Fix: Changed "userData" to "data" to match method arguments
       options: { data: { first_name: data.firstName, last_name: data.lastName, role: 'teacher' } }
     });
     if (authError) {
       setIgnoreAuthEvents(false);
       throw authError;
     }
+
+    // Manually create profile to ensure FK constraints are met immediately
+    await supabase.from('profiles').upsert({
+      id: authData.user?.id,
+      email: data.email,
+      first_name: data.firstName,
+      last_name: data.lastName,
+      role: 'teacher'
+    });
 
     const { data: teacher, error: teacherError } = await supabase.from('teachers').insert({
       user_id: authData.user?.id,
@@ -337,6 +351,7 @@ export const adminService = {
       saveTeachers(teachers.filter(item => item.id !== id));
       if (t) {
         const users = getStoredUsers();
+        // Fix: Changed 's.userId' to 't.userId' to resolve undefined reference
         saveUsers(users.filter(u => u.id !== t.userId));
       }
       return;

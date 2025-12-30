@@ -91,6 +91,16 @@ export const authService = {
     });
 
     if (error) throw error;
+
+    // Manually create profile to satisfy database FK constraints
+    await supabase.from('profiles').upsert({
+      id: authData.user?.id,
+      email: data.email,
+      first_name: data.firstName,
+      last_name: data.lastName,
+      role: data.role
+    });
+
     return { user: null, session: authData.session, emailConfirmationRequired: !authData.session };
   },
 
