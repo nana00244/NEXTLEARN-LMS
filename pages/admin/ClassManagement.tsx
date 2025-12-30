@@ -25,6 +25,7 @@ export const ClassManagement: React.FC = () => {
   const fetchData = async () => {
     setLoading(true);
     try {
+      console.log("[ClassHub] Fetching data...");
       const [cData, tData, sData] = await Promise.all([
         adminService.getClasses(),
         adminService.getTeachers(),
@@ -33,8 +34,9 @@ export const ClassManagement: React.FC = () => {
       setClasses(cData);
       setTeachers(tData);
       setSubjects(sData);
-    } catch (err) {
-      setAlert({ type: 'error', message: 'Failed to load data' });
+    } catch (err: any) {
+      console.error("[ClassHub] Failed to fetch:", err);
+      setAlert({ type: 'error', message: `Database error: ${err.message || 'Unknown error'}` });
     } finally {
       setLoading(false);
     }
@@ -44,6 +46,7 @@ export const ClassManagement: React.FC = () => {
 
   const handleCreateOrUpdateClass = async (e: React.FormEvent) => {
     e.preventDefault();
+    setLoading(true);
     try {
       if (editingClass) {
         await adminService.updateClass(editingClass.id, classForm);
@@ -55,9 +58,10 @@ export const ClassManagement: React.FC = () => {
       setShowAddClass(false);
       setEditingClass(null);
       setClassForm({ name: '', gradeLevel: '', section: '' });
-      fetchData();
+      await fetchData();
     } catch (err: any) {
-      setAlert({ type: 'error', message: err.message });
+      setAlert({ type: 'error', message: `Creation failed: ${err.message}` });
+      setLoading(false);
     }
   };
 
@@ -93,7 +97,10 @@ export const ClassManagement: React.FC = () => {
     setShowAddClass(true);
   };
 
-  if (loading && classes.length === 0) return <div className="p-20"><Spinner size="lg" /></div>;
+  if (loading && classes.length === 0) return <div className="min-h-[60vh] flex flex-col items-center justify-center space-y-4">
+    <Spinner size="lg" />
+    <p className="text-slate-400 font-medium">Connecting to Class Hub...</p>
+  </div>;
 
   return (
     <div className="space-y-8">
@@ -173,7 +180,6 @@ export const ClassManagement: React.FC = () => {
         ))}
       </div>
 
-      {/* Modals */}
       {showAddClass && (
         <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm">
           <div className="bg-white dark:bg-slate-900 rounded-[2.5rem] p-10 max-w-md w-full shadow-2xl">

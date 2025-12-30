@@ -2,9 +2,35 @@
 import { supabase } from '../lib/supabase';
 import { Student, User, Class, UserRole, Teacher, Subject } from '../types';
 
+// Helper to map DB Classes to Frontend Classes
+const mapClassFromDb = (c: any) => ({
+  ...c,
+  gradeLevel: c.grade_level,
+  classCode: c.class_code,
+  studentCount: c.students?.[0]?.count || 0,
+  teachers: c.class_subject_teachers?.map((link: any) => ({
+    id: link.id,
+    name: link.profiles ? `${link.profiles.first_name} ${link.profiles.last_name}` : 'Unknown',
+    subject: link.subjects?.name || 'General'
+  })) || []
+});
+
+const mapStudentFromDb = (s: any) => ({
+  ...s,
+  admissionNumber: s.admission_number,
+  classId: s.class_id,
+  user: s.profiles ? {
+    ...s.profiles,
+    firstName: s.profiles.first_name,
+    lastName: s.profiles.last_name,
+  } : null,
+  class: s.classes
+});
+
 export const adminService = {
   // Students
   getStudents: async () => {
+    console.log("[AdminService] Fetching all students...");
     const { data, error } = await supabase
       .from('students')
       .select(`
@@ -13,13 +39,12 @@ export const adminService = {
         classes:class_id (*)
       `);
     
-    if (error) throw error;
+    if (error) {
+      console.error("[AdminService] getStudents error:", error.message, error.details);
+      throw error;
+    }
 
-    return data.map(s => ({
-      ...s,
-      user: s.profiles,
-      class: s.classes
-    }));
+    return data.map(mapStudentFromDb);
   },
 
   getStudentsByClass: async (classId: string) => {
@@ -31,13 +56,15 @@ export const adminService = {
       `)
       .eq('class_id', classId);
     
-    if (error) throw error;
-    return data.map(s => ({ ...s, user: s.profiles }));
+    if (error) {
+      console.error("[AdminService] getStudentsByClass error:", error.message);
+      throw error;
+    }
+    return data.map(mapStudentFromDb);
   },
   
   addStudent: async (studentData: any, userData: any) => {
-    // 1. Create Auth User (Note: This usually requires Service Role for cross-user creation, 
-    // but we simulate using signUp here. In production, use Supabase Edge Functions or admin SDK)
+    console.log("[AdminService] Enrolling new student:", userData.email);
     const { data, error } = await supabase.auth.signUp({
       email: userData.email,
       password: userData.password || 'NextLearn123',
@@ -50,11 +77,13 @@ export const adminService = {
       }
     });
 
-    if (error) throw error;
+    if (error) {
+      console.error("[AdminService] Auth signUp error:", error.message);
+      throw error;
+    }
 
     const userId = data.user!.id;
 
-    // 2. Add Student Record
     const { data: student, error: sError } = await supabase
       .from('students')
       .insert({
@@ -66,7 +95,10 @@ export const adminService = {
       .select()
       .single();
 
-    if (sError) throw sError;
+    if (sError) {
+      console.error("[AdminService] student insert error:", sError.message);
+      throw sError;
+    }
 
     return { 
       user: { id: userId, email: userData.email, ...userData }, 
@@ -76,7 +108,6 @@ export const adminService = {
   },
 
   updateStudent: async (studentId: string, studentUpdates: any, userUpdates: any) => {
-    // Map CamelCase to SnakeCase for DB
     const sUpdate = {
       admission_number: studentUpdates.admissionNumber,
       class_id: studentUpdates.classId,
@@ -101,18 +132,15 @@ export const adminService = {
   },
 
   deleteStudent: async (studentId: string) => {
-    // In Supabase, if CASCADE is set on profiles, we just delete the student or the auth user
     const { error } = await supabase.from('students').delete().eq('id', studentId);
     if (error) throw error;
   },
 
-  // Fix: Added deleteStudentsBulk method
   deleteStudentsBulk: async (ids: string[]) => {
     const { error } = await supabase.from('students').delete().in('id', ids);
     if (error) throw error;
   },
 
-  // Fix: Added moveStudentToClass method
   moveStudentToClass: async (studentId: string, classId: string) => {
     const { error } = await supabase.from('students').update({ class_id: classId }).eq('id', studentId);
     if (error) throw error;
@@ -120,6 +148,7 @@ export const adminService = {
 
   // Classes
   getClasses: async () => {
+    console.log("[AdminService] Fetching all classes...");
     const { data, error } = await supabase
       .from('classes')
       .select(`
@@ -132,33 +161,46 @@ export const adminService = {
         students (count)
       `);
 
-    if (error) throw error;
+    if (error) {
+      console.error("[AdminService] getClasses error:", error.message, error.hint);
+      throw error;
+    }
 
-    return data.map(c => ({
-      ...c,
-      studentCount: c.students?.[0]?.count || 0,
-      teachers: c.class_subject_teachers.map((link: any) => ({
-        id: link.id,
-        name: `${link.profiles.first_name} ${link.profiles.last_name}`,
-        subject: link.subjects.name
-      }))
-    }));
+    return data.map(mapClassFromDb);
   },
 
   getClassById: async (id: string) => {
     const { data, error } = await supabase.from('classes').select('*').eq('id', id).single();
     if (error) throw error;
-    return data;
+    return mapClassFromDb(data);
   },
 
   createClass: async (classData: Partial<Class>) => {
-    const { data, error } = await supabase.from('classes').insert(classData).select().single();
-    if (error) throw error;
-    return data;
+    // Map camelCase to snake_case for DB insert
+    const dbData = {
+      name: classData.name,
+      grade_level: classData.gradeLevel,
+      section: classData.section,
+      class_code: classData.classCode || `CL-${Math.random().toString(36).substr(2, 5).toUpperCase()}`,
+      description: classData.description
+    };
+
+    const { data, error } = await supabase.from('classes').insert(dbData).select().single();
+    if (error) {
+      console.error("[AdminService] createClass error:", error.message);
+      throw error;
+    }
+    return mapClassFromDb(data);
   },
 
   updateClass: async (classId: string, updates: Partial<Class>) => {
-    const { error } = await supabase.from('classes').update(updates).eq('id', classId);
+    const dbUpdate: any = {};
+    if (updates.name) dbUpdate.name = updates.name;
+    if (updates.gradeLevel) dbUpdate.grade_level = updates.gradeLevel;
+    if (updates.section) dbUpdate.section = updates.section;
+    if (updates.description) dbUpdate.description = updates.description;
+
+    const { error } = await supabase.from('classes').update(dbUpdate).eq('id', classId);
     if (error) throw error;
   },
 
@@ -168,8 +210,8 @@ export const adminService = {
   },
 
   // Teachers & Faculty
-  // Fix: Added getTeachers method
   getTeachers: async () => {
+    console.log("[AdminService] Fetching all teachers...");
     const { data, error } = await supabase
       .from('teachers')
       .select(`
@@ -182,20 +224,26 @@ export const adminService = {
         )
       `);
     
-    if (error) throw error;
+    if (error) {
+      console.error("[AdminService] getTeachers error:", error.message);
+      throw error;
+    }
 
     return data.map(t => ({
       ...t,
-      user: t.profiles,
-      assignments: t.class_subject_teachers.map((link: any) => ({
+      user: t.profiles ? {
+        ...t.profiles,
+        firstName: t.profiles.first_name,
+        lastName: t.profiles.last_name
+      } : null,
+      assignments: t.class_subject_teachers?.map((link: any) => ({
         id: link.id,
-        className: link.classes.name,
-        subjectName: link.subjects.name
-      }))
+        className: link.classes?.name || 'Unknown Class',
+        subjectName: link.subjects?.name || 'General'
+      })) || []
     }));
   },
 
-  // Fix: Added addTeacher method
   addTeacher: async (data: any) => {
     const { data: authData, error } = await supabase.auth.signUp({
       email: data.email,
@@ -233,13 +281,11 @@ export const adminService = {
     };
   },
 
-  // Fix: Added deleteTeacher method
   deleteTeacher: async (id: string) => {
     const { error } = await supabase.from('teachers').delete().eq('id', id);
     if (error) throw error;
   },
 
-  // Fix: Added assignTeacherToClass method
   assignTeacherToClass: async (teacherId: string, classId: string, subjectId: string) => {
     const { data, error } = await supabase
       .from('class_subject_teachers')
@@ -254,13 +300,11 @@ export const adminService = {
     return data;
   },
 
-  // Fix: Added removeTeacherFromClass method
   removeTeacherFromClass: async (id: string) => {
     const { error } = await supabase.from('class_subject_teachers').delete().eq('id', id);
     if (error) throw error;
   },
 
-  // Fix: Added createSubject method
   createSubject: async (name: string) => {
     const { data, error } = await supabase
       .from('subjects')
@@ -271,7 +315,6 @@ export const adminService = {
     return data;
   },
 
-  // Fix: Added getStaff method
   getStaff: async () => {
     const { data, error } = await supabase
       .from('profiles')
@@ -287,18 +330,23 @@ export const adminService = {
   },
 
   getStats: async () => {
-    const { count: studentCount } = await supabase.from('students').select('*', { count: 'exact', head: true });
-    const { count: staffCount } = await supabase.from('profiles').select('*', { count: 'exact', head: true }).neq('role', 'student');
-    const { count: classesCount } = await supabase.from('classes').select('*', { count: 'exact', head: true });
+    try {
+      const { count: studentCount } = await supabase.from('students').select('*', { count: 'exact', head: true });
+      const { count: staffCount } = await supabase.from('profiles').select('*', { count: 'exact', head: true }).neq('role', 'student');
+      const { count: classesCount } = await supabase.from('classes').select('*', { count: 'exact', head: true });
 
-    return {
-      studentsCount: studentCount || 0,
-      staffCount: staffCount || 0,
-      classesCount: classesCount || 0,
-      recentActivity: [
-        { id: 1, text: 'System synced with Supabase Realtime', time: 'Just now' },
-        { id: 2, text: 'Database migrations verified', time: '1h ago' }
-      ]
-    };
+      return {
+        studentsCount: studentCount || 0,
+        staffCount: staffCount || 0,
+        classesCount: classesCount || 0,
+        recentActivity: [
+          { id: 1, text: 'System synced with Supabase Realtime', time: 'Just now' },
+          { id: 2, text: 'Database migrations verified', time: '1h ago' }
+        ]
+      };
+    } catch (err) {
+      console.error("[AdminService] getStats failed:", err);
+      return { studentsCount: 0, staffCount: 0, classesCount: 0, recentActivity: [] };
+    }
   }
 };
