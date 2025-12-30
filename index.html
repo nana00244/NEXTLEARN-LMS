@@ -1,0 +1,125 @@
+
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>NextLearn LMS</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+      tailwind.config = {
+        darkMode: 'class',
+        theme: {
+          extend: {
+            fontFamily: {
+              sans: ['Inter', 'sans-serif'],
+            },
+          },
+        },
+      }
+    </script>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+      body {
+        font-family: 'Inter', sans-serif;
+      }
+      /* Custom scrollbar */
+      ::-webkit-scrollbar {
+        width: 8px;
+      }
+      ::-webkit-scrollbar-track {
+        background: transparent;
+      }
+      ::-webkit-scrollbar-thumb {
+        background: #cbd5e1;
+        border-radius: 4px;
+      }
+      .dark ::-webkit-scrollbar-thumb {
+        background: #475569;
+      }
+
+      /* Print Optimization Styles */
+      @media print {
+        @page {
+          size: A4;
+          margin: 0; /* Let CSS handle padding for better control */
+        }
+        
+        /* Global Print Resets */
+        html, body {
+          background: white !important;
+          color: black !important;
+          height: auto !important;
+        }
+
+        /* Hide everything that isn't the receipt */
+        nav, aside, button, footer, .no-print, header, .sidebar-spacer, .modal-overlay {
+          display: none !important;
+        }
+
+        #root, main {
+          margin: 0 !important;
+          padding: 0 !important;
+          display: block !important;
+          width: 100% !important;
+        }
+
+        main {
+          margin-left: 0 !important;
+          display: flex !important;
+          justify-content: center !important;
+          padding-top: 2cm !important;
+        }
+
+        .max-w-7xl, .max-w-xl {
+          max-width: none !important;
+          width: 100% !important;
+        }
+
+        /* The Receipt Card Formatting */
+        .receipt-card {
+          display: block !important;
+          border: 1px solid #e2e8f0 !important;
+          box-shadow: none !important;
+          margin: 0 auto !important;
+          width: 16cm !important;
+          background: white !important;
+          border-radius: 12px !important;
+          padding: 1.5cm !important;
+          -webkit-print-color-adjust: exact !important;
+          print-color-adjust: exact !important;
+        }
+
+        /* UI elements to force colors in PDF */
+        .bg-indigo-600 { background-color: #4f46e5 !important; -webkit-print-color-adjust: exact; }
+        .bg-emerald-50 { background-color: #ecfdf5 !important; -webkit-print-color-adjust: exact; }
+        .bg-slate-50 { background-color: #f8fafc !important; -webkit-print-color-adjust: exact; }
+        .text-indigo-600 { color: #4f46e5 !important; }
+        .text-emerald-600 { color: #059669 !important; }
+        .text-rose-600 { color: #e11d48 !important; }
+        
+        /* Ensure dark mode text doesn't stay white */
+        .dark .receipt-card * {
+          color: #0f172a !important;
+        }
+        .dark .text-indigo-600 { color: #4f46e5 !important; }
+        .dark .text-emerald-600 { color: #059669 !important; }
+      }
+    </style>
+    <script type="importmap">
+{
+  "imports": {
+    "react-dom/": "https://esm.sh/react-dom@^19.2.3/",
+    "react/": "https://esm.sh/react@^19.2.3/",
+    "react": "https://esm.sh/react@^19.2.3",
+    "react-router-dom": "https://esm.sh/react-router-dom@^7.11.0"
+  }
+}
+</script>
+</head>
+  <body class="bg-slate-50 text-slate-900 dark:bg-slate-950 dark:text-slate-50 transition-colors duration-200 antialiased">
+    <div id="root"></div>
+  </body>
+</html>

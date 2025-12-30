@@ -1,0 +1,5 @@
+{
+  "name": "NextLearn LMS ",
+  "description": "Foundation & Authentication System for NextLearn LMS, including role-based access, theme management, and secure registration/login simulation.",
+  "requestFramePermissions": []
+}
