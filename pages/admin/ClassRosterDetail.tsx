@@ -60,8 +60,10 @@ export const ClassRosterDetail: React.FC = () => {
           { admissionNumber: form.admissionNumber, classId: classId, status: 'active' },
           { firstName: form.firstName, lastName: form.lastName, email: form.email, password: form.password }
         );
-        if (result.credentials) {
-          setCredentials(result.credentials);
+        // Fix: accessing credentials on result of updateStudent which now returns it optionally
+        const finalResult = result as { credentials?: { email: string; password: string } };
+        if (finalResult.credentials) {
+          setCredentials(finalResult.credentials);
         } else {
           setAlert({ type: 'success', message: 'Student profile updated.' });
         }
@@ -258,7 +260,7 @@ export const ClassRosterDetail: React.FC = () => {
       {/* Credential Reveal Modal */}
       {credentials && (
         <div className="fixed inset-0 z-[110] flex items-center justify-center p-4 bg-slate-900/80 backdrop-blur-md">
-           <div className="bg-white dark:bg-slate-900 rounded-[3rem] p-12 max-w-sm w-full shadow-2xl text-center">
+           <div className="bg-white dark:bg-slate-900 rounded-[3rem] p-12 max-sm w-full shadow-2xl text-center">
               <div className="w-24 h-24 bg-emerald-100 rounded-full flex items-center justify-center text-5xl mx-auto mb-8 animate-bounce">🎓</div>
               <h2 className="text-3xl font-black mb-2">Student Credentials</h2>
               <p className="text-slate-500 mb-10">Share these login details with the student immediately.</p>

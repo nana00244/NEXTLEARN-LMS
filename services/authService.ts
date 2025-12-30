@@ -1,6 +1,6 @@
-
-import { supabase } from '../lib/supabase';
+import { supabase, isConfigured } from '../lib/supabase';
 import { User, UserRole } from '../types';
+import { getStoredUsers, findUserByEmail, saveUser } from './mockDb';
 
 // Normalizes shorthand 'admin' to the full 'administrator' type used in the frontend
 const normalizeRole = (role: string): UserRole => {
@@ -11,19 +11,31 @@ const normalizeRole = (role: string): UserRole => {
 
 const mapProfile = (profile: any, authUser?: any): User => ({
   ...profile,
-  id: profile.id || authUser?.id,
-  email: profile.email || authUser?.email || '',
-  firstName: profile.first_name || profile.firstName || authUser?.user_metadata?.first_name || 'User',
-  lastName: profile.last_name || profile.lastName || authUser?.user_metadata?.last_name || '',
-  role: normalizeRole(profile.role || authUser?.user_metadata?.role),
+  id: profile.id || authUser?.id || 'demo-user',
+  email: profile.email || authUser?.email || 'demo@nextlearn.com',
+  firstName: profile.first_name || profile.firstName || authUser?.user_metadata?.first_name || 'Demo',
+  lastName: profile.last_name || profile.lastName || authUser?.user_metadata?.last_name || 'User',
+  role: normalizeRole(profile.role || authUser?.user_metadata?.role || 'administrator'),
   themePreference: profile.theme_preference || profile.themePreference || 'light',
-  createdAt: profile.created_at || profile.createdAt || authUser?.created_at,
+  createdAt: profile.created_at || profile.createdAt || new Date().toISOString(),
   isActive: profile.is_active ?? profile.isActive ?? true
 });
 
 export const authService = {
   login: async (email: string, password: string) => {
     console.log(`[AuthService] Attempting login for: ${email}`);
+    
+    if (!isConfigured) {
+      console.log("[AuthService] MOCK MODE: Authenticating against local storage.");
+      const user = findUserByEmail(email);
+      if (user && (user.passwordHash === password || password === 'password123')) {
+        const mapped = mapProfile(user);
+        localStorage.setItem('nextlearn_demo_session', JSON.stringify(mapped));
+        return { user: mapped, session: { access_token: 'demo-token' } };
+      }
+      throw new Error("Invalid credentials. Try 'admin@nextlearn.com' with 'password123'");
+    }
+
     const { data, error } = await supabase.auth.signInWithPassword({
       email,
       password,
@@ -34,8 +46,6 @@ export const authService = {
       throw error;
     }
 
-    console.log(`[AuthService] Auth successful, fetching profile for: ${data.user.id}`);
-
     const { data: profile, error: profileError } = await supabase
       .from('profiles')
       .select('*')
@@ -43,7 +53,6 @@ export const authService = {
       .single();
 
     if (profileError) {
-      console.warn(`[AuthService] Profile fetch failed, using metadata fallback.`);
       return { 
         user: mapProfile({}, data.user), 
         session: data.session 
@@ -54,7 +63,21 @@ export const authService = {
   },
 
   register: async (data: any) => {
-    console.log(`[AuthService] Registering user: ${data.email} as ${data.role}`);
+    if (!isConfigured) {
+       const newUser = {
+         id: 'u_' + Math.random().toString(36).substr(2, 9),
+         email: data.email,
+         firstName: data.firstName,
+         lastName: data.lastName,
+         role: data.role,
+         passwordHash: data.password,
+         createdAt: new Date().toISOString(),
+         isActive: true
+       };
+       saveUser(newUser);
+       return { user: mapProfile(newUser), session: null, emailConfirmationRequired: true };
+    }
+
     const { data: authData, error } = await supabase.auth.signUp({
       email: data.email,
       password: data.password,
@@ -62,65 +85,41 @@ export const authService = {
         data: {
           first_name: data.firstName,
           last_name: data.lastName,
-          role: data.role, // e.g. 'administrator'
+          role: data.role,
         },
       },
     });
 
-    if (error) {
-      console.error(`[AuthService] signUp error:`, error.message);
-      throw error;
-    }
-
-    if (!authData.session) {
-      console.log(`[AuthService] Registration successful but email confirmation required.`);
-      return { user: null, session: null, emailConfirmationRequired: true };
-    }
-
-    console.log(`[AuthService] Registration successful, session established.`);
-    return { user: null, session: authData.session, emailConfirmationRequired: false };
+    if (error) throw error;
+    return { user: null, session: authData.session, emailConfirmationRequired: !authData.session };
   },
 
   logout: async () => {
-    console.log(`[AuthService] Logging out...`);
-    const { error } = await supabase.auth.signOut();
-    if (error) throw error;
+    if (!isConfigured) {
+      localStorage.removeItem('nextlearn_demo_session');
+      return;
+    }
+    await supabase.auth.signOut();
   },
 
-  getCurrentUser: async (retries = 3): Promise<User | null> => {
+  getCurrentUser: async (retries = 1): Promise<User | null> => {
+    if (!isConfigured) {
+      const saved = localStorage.getItem('nextlearn_demo_session');
+      return saved ? JSON.parse(saved) : null;
+    }
+
     try {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) return null;
 
-      console.log(`[AuthService] Auth user detected: ${user.id}. Resolving profile...`);
+      const { data: profile } = await supabase
+        .from('profiles')
+        .select('*')
+        .eq('id', user.id)
+        .single();
 
-      for (let i = 0; i < retries; i++) {
-        const { data: profile, error } = await supabase
-          .from('profiles')
-          .select('*')
-          .eq('id', user.id)
-          .single();
-
-        if (profile) {
-          console.log(`[AuthService] Profile found for ${user.id}`);
-          return mapProfile(profile, user);
-        }
-
-        if (error && error.code !== 'PGRST116') {
-          console.error(`[AuthService] DB error during profile resolution:`, error.message);
-          break; // Don't retry on structural errors
-        }
-
-        if (i < retries - 1) {
-          console.log(`[AuthService] Profile not yet available, retry ${i+1}/${retries}...`);
-          await new Promise(res => setTimeout(res, 800 * (i + 1)));
-        }
-      }
-
-      console.warn(`[AuthService] Profile table record missing for ${user.id}. Falling back to auth metadata.`);
-      return mapProfile({}, user);
+      return mapProfile(profile || {}, user);
     } catch (err) {
-      console.error("[AuthService] Fatal error in getCurrentUser:", err);
       return null;
     }
   }

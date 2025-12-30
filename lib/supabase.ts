@@ -3,23 +3,30 @@ import { createClient } from '@supabase/supabase-js';
 /**
  * Safely retrieves environment variables.
  * Vite injects variables into import.meta.env. 
- * We use optional chaining and a fallback object to prevent runtime crashes.
  */
 const env = (import.meta as any).env || {};
 
-const supabaseUrl = env.VITE_SUPABASE_URL;
-const supabaseAnonKey = env.VITE_SUPABASE_ANON_KEY;
+// Using the credentials provided by the user as reliable defaults
+export const supabaseUrl = env.VITE_SUPABASE_URL || 'https://eaouluvelmfvutnsflnr.supabase.co';
+export const supabaseAnonKey = env.VITE_SUPABASE_ANON_KEY || 'sb_publishable_hzMElmC4HBrj5Ng6XofsgQ_dzuReNuC';
 
-// Log helpful debugging information in the console
-if (!supabaseUrl || !supabaseAnonKey) {
-  console.error(
-    "[NextLearn Config] Critical Error: Supabase credentials are missing.\n" +
-    "If you are seeing this in production (Netlify), ensure you have added " +
-    "VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY to your Site Environment Variables."
-  );
+// If the URL is still the placeholder or missing, we are not properly configured
+export const isConfigured = !!(supabaseUrl && 
+                               supabaseAnonKey && 
+                               supabaseUrl !== 'https://placeholder-project.supabase.co' &&
+                               supabaseUrl !== 'https://invalid.supabase.co');
+
+// Log configuration status for debugging
+if (isConfigured) {
+  console.log("[NextLearn] Supabase initialized with project: " + supabaseUrl);
+} else {
+  console.error("[NextLearn] Supabase credentials missing or invalid.");
 }
 
-export const supabase = createClient(
-  supabaseUrl || 'https://placeholder.supabase.co', 
-  supabaseAnonKey || 'placeholder-key'
-);
+export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
+  auth: {
+    persistSession: true,
+    autoRefreshToken: true,
+    detectSessionInUrl: true
+  }
+});
