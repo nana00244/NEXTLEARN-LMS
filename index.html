@@ -1,4 +1,3 @@
-
 <!DOCTYPE html>
 <html lang="en">
   <head>
@@ -44,17 +43,15 @@
       @media print {
         @page {
           size: A4;
-          margin: 0; /* Let CSS handle padding for better control */
+          margin: 0;
         }
         
-        /* Global Print Resets */
         html, body {
           background: white !important;
           color: black !important;
           height: auto !important;
         }
 
-        /* Hide everything that isn't the receipt */
         nav, aside, button, footer, .no-print, header, .sidebar-spacer, .modal-overlay {
           display: none !important;
         }
@@ -73,12 +70,6 @@
           padding-top: 2cm !important;
         }
 
-        .max-w-7xl, .max-w-xl {
-          max-width: none !important;
-          width: 100% !important;
-        }
-
-        /* The Receipt Card Formatting */
         .receipt-card {
           display: block !important;
           border: 1px solid #e2e8f0 !important;
@@ -92,34 +83,28 @@
           print-color-adjust: exact !important;
         }
 
-        /* UI elements to force colors in PDF */
-        .bg-indigo-600 { background-color: #4f46e5 !important; -webkit-print-color-adjust: exact; }
-        .bg-emerald-50 { background-color: #ecfdf5 !important; -webkit-print-color-adjust: exact; }
-        .bg-slate-50 { background-color: #f8fafc !important; -webkit-print-color-adjust: exact; }
-        .text-indigo-600 { color: #4f46e5 !important; }
-        .text-emerald-600 { color: #059669 !important; }
-        .text-rose-600 { color: #e11d48 !important; }
-        
-        /* Ensure dark mode text doesn't stay white */
         .dark .receipt-card * {
           color: #0f172a !important;
         }
-        .dark .text-indigo-600 { color: #4f46e5 !important; }
-        .dark .text-emerald-600 { color: #059669 !important; }
       }
     </style>
-    <script type="importmap">
+<script type="importmap">
 {
   "imports": {
+    "react": "https://esm.sh/react@^19.2.3",
     "react-dom/": "https://esm.sh/react-dom@^19.2.3/",
     "react/": "https://esm.sh/react@^19.2.3/",
-    "react": "https://esm.sh/react@^19.2.3",
-    "react-router-dom": "https://esm.sh/react-router-dom@^7.11.0"
+    "react-router-dom": "https://esm.sh/react-router-dom@^7.11.0",
+    "@supabase/supabase-js": "https://esm.sh/@supabase/supabase-js@^2.89.0",
+    "vite": "https://esm.sh/vite@^7.3.0",
+    "@vitejs/plugin-react": "https://esm.sh/@vitejs/plugin-react@^5.1.2"
   }
 }
 </script>
 </head>
   <body class="bg-slate-50 text-slate-900 dark:bg-slate-950 dark:text-slate-50 transition-colors duration-200 antialiased">
     <div id="root"></div>
+    <!-- Vite will automatically handle the compilation of this TSX file -->
+    <script type="module" src="/index.tsx"></script>
   </body>
 </html>
