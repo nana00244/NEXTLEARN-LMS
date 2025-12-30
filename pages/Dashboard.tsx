@@ -18,7 +18,14 @@ export const Dashboard: React.FC = () => {
     }
   }, [user]);
 
-  if (!user) return null;
+  if (!user) {
+    return (
+      <div className="flex flex-col items-center justify-center h-[60vh] space-y-4">
+        <Spinner size="lg" />
+        <p className="text-slate-500 font-medium animate-pulse">Loading institutional profile...</p>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-6">

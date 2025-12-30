@@ -6,7 +6,7 @@ import { authService } from '../services/authService';
 
 interface AuthContextType extends AuthState {
   login: (email: string, pass: string) => Promise<void>;
-  register: (data: any) => Promise<void>;
+  register: (data: any) => Promise<any>;
   logout: () => void;
   updateProfile: (data: Partial<User>) => Promise<void>;
 }
@@ -24,31 +24,37 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   useEffect(() => {
     // Initial session check
     const initAuth = async () => {
-      const { data: { session } } = await supabase.auth.getSession();
-      
-      if (session) {
-        const userProfile = await authService.getCurrentUser();
-        setState({
-          token: session.access_token,
-          user: userProfile,
-          isAuthenticated: true,
-          isLoading: false,
-        });
-      } else {
+      try {
+        const { data: { session } } = await supabase.auth.getSession();
+        
+        if (session) {
+          const userProfile = await authService.getCurrentUser();
+          setState({
+            token: session.access_token,
+            user: userProfile,
+            isAuthenticated: !!userProfile,
+            isLoading: false,
+          });
+        } else {
+          setState(s => ({ ...s, isLoading: false }));
+        }
+      } catch (err) {
+        console.error("Auth initialization error:", err);
         setState(s => ({ ...s, isLoading: false }));
       }
     };
 
     initAuth();
 
-    // Listen for auth changes (login/logout/token refresh)
+    // Listen for auth changes
     const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
       if (session) {
+        // Only trigger loading if we don't have a user yet or the token changed
         const userProfile = await authService.getCurrentUser();
         setState({
           token: session.access_token,
           user: userProfile,
-          isAuthenticated: true,
+          isAuthenticated: !!userProfile,
           isLoading: false,
         });
       } else {
@@ -79,7 +85,14 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const register = async (data: any) => {
     setState(s => ({ ...s, isLoading: true }));
     try {
-      await authService.register(data);
+      const result = await authService.register(data);
+      // We don't manually set isLoading: false here because 
+      // onAuthStateChange will fire and update the state.
+      // If result indicates email confirmation is required, we do need to set it false.
+      if (result?.emailConfirmationRequired) {
+        setState(s => ({ ...s, isLoading: false }));
+      }
+      return result;
     } catch (err) {
       setState(s => ({ ...s, isLoading: false }));
       throw err;
@@ -103,7 +116,12 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   };
 
   const logout = async () => {
-    await authService.logout();
+    setState(s => ({ ...s, isLoading: true }));
+    try {
+      await authService.logout();
+    } finally {
+      setState(s => ({ ...s, isLoading: false }));
+    }
   };
 
   return (

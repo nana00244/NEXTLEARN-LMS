@@ -16,6 +16,7 @@ export const Register: React.FC = () => {
     phone: '',
   });
   const [error, setError] = useState<string | null>(null);
+  const [success, setSuccess] = useState<string | null>(null);
   const { register, isLoading } = useAuth();
   const navigate = useNavigate();
 
@@ -37,28 +38,46 @@ export const Register: React.FC = () => {
       return "Password must be at least 6 characters long.";
     }
 
-    if (formData.phone && !/^\+?[\d\s-]{7,15}$/.test(formData.phone)) {
-      return "Please enter a valid phone number.";
-    }
-
     return null;
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
+    setSuccess(null);
+    
+    console.log("[Register] Form submitted. Data:", { ...formData, password: '***' });
     
     const validationError = validateForm();
     if (validationError) {
+      console.warn("[Register] Validation failed:", validationError);
       setError(validationError);
       return;
     }
     
     try {
-      await register(formData);
-      navigate('/');
+      console.log("[Register] Calling register context function...");
+      const result = await register(formData);
+      console.log("[Register] Registration call finished. Result:", result);
+
+      if (result?.emailConfirmationRequired) {
+        setSuccess("Success! A confirmation link has been sent to your email. Please verify your account before logging in.");
+        // Clear form to allow new registration or visual cleanup
+        setFormData({
+          firstName: '',
+          lastName: '',
+          email: '',
+          password: '',
+          role: 'student',
+          phone: '',
+        });
+      } else {
+        console.log("[Register] Registration successful, redirecting...");
+        navigate('/');
+      }
     } catch (err: any) {
-      setError(err.message || 'Registration failed.');
+      console.error("[Register] Error caught in component:", err);
+      setError(err.message || 'Registration failed. Check console for details.');
     }
   };
 
@@ -71,6 +90,7 @@ export const Register: React.FC = () => {
         </div>
 
         {error && <Alert type="error" message={error} onClose={() => setError(null)} />}
+        {success && <Alert type="success" message={success} onClose={() => setSuccess(null)} />}
 
         <form className="mt-8 grid grid-cols-1 md:grid-cols-2 gap-6" onSubmit={handleSubmit}>
           <div className="space-y-4 md:col-span-1">
@@ -78,9 +98,10 @@ export const Register: React.FC = () => {
             <input
               name="firstName"
               required
+              disabled={isLoading}
               value={formData.firstName}
               onChange={handleChange}
-              className="block w-full px-4 py-3 rounded-xl bg-slate-50 dark:bg-slate-800 border-0 ring-1 ring-slate-200 dark:ring-slate-700 text-slate-900 dark:text-white focus:ring-2 focus:ring-indigo-600 outline-none"
+              className="block w-full px-4 py-3 rounded-xl bg-slate-50 dark:bg-slate-800 border-0 ring-1 ring-slate-200 dark:ring-slate-700 text-slate-900 dark:text-white focus:ring-2 focus:ring-indigo-600 outline-none disabled:opacity-50"
             />
           </div>
 
@@ -89,9 +110,10 @@ export const Register: React.FC = () => {
             <input
               name="lastName"
               required
+              disabled={isLoading}
               value={formData.lastName}
               onChange={handleChange}
-              className="block w-full px-4 py-3 rounded-xl bg-slate-50 dark:bg-slate-800 border-0 ring-1 ring-slate-200 dark:ring-slate-700 text-slate-900 dark:text-white focus:ring-2 focus:ring-indigo-600 outline-none"
+              className="block w-full px-4 py-3 rounded-xl bg-slate-50 dark:bg-slate-800 border-0 ring-1 ring-slate-200 dark:ring-slate-700 text-slate-900 dark:text-white focus:ring-2 focus:ring-indigo-600 outline-none disabled:opacity-50"
             />
           </div>
 
@@ -101,9 +123,10 @@ export const Register: React.FC = () => {
               name="email"
               type="email"
               required
+              disabled={isLoading}
               value={formData.email}
               onChange={handleChange}
-              className="block w-full px-4 py-3 rounded-xl bg-slate-50 dark:bg-slate-800 border-0 ring-1 ring-slate-200 dark:ring-slate-700 text-slate-900 dark:text-white focus:ring-2 focus:ring-indigo-600 outline-none"
+              className="block w-full px-4 py-3 rounded-xl bg-slate-50 dark:bg-slate-800 border-0 ring-1 ring-slate-200 dark:ring-slate-700 text-slate-900 dark:text-white focus:ring-2 focus:ring-indigo-600 outline-none disabled:opacity-50"
             />
           </div>
 
@@ -111,9 +134,10 @@ export const Register: React.FC = () => {
             <label className="block text-sm font-medium text-slate-700 dark:text-slate-300">Account Type</label>
             <select
               name="role"
+              disabled={isLoading}
               value={formData.role}
               onChange={handleChange}
-              className="block w-full px-4 py-3 rounded-xl bg-slate-50 dark:bg-slate-800 border-0 ring-1 ring-slate-200 dark:ring-slate-700 text-slate-900 dark:text-white focus:ring-2 focus:ring-indigo-600 outline-none"
+              className="block w-full px-4 py-3 rounded-xl bg-slate-50 dark:bg-slate-800 border-0 ring-1 ring-slate-200 dark:ring-slate-700 text-slate-900 dark:text-white focus:ring-2 focus:ring-indigo-600 outline-none disabled:opacity-50"
             >
               <option value="student">Student</option>
               <option value="teacher">Teacher</option>
@@ -126,9 +150,10 @@ export const Register: React.FC = () => {
             <label className="block text-sm font-medium text-slate-700 dark:text-slate-300">Phone (Optional)</label>
             <input
               name="phone"
+              disabled={isLoading}
               value={formData.phone}
               onChange={handleChange}
-              className="block w-full px-4 py-3 rounded-xl bg-slate-50 dark:bg-slate-800 border-0 ring-1 ring-slate-200 dark:ring-slate-700 text-slate-900 dark:text-white focus:ring-2 focus:ring-indigo-600 outline-none"
+              className="block w-full px-4 py-3 rounded-xl bg-slate-50 dark:bg-slate-800 border-0 ring-1 ring-slate-200 dark:ring-slate-700 text-slate-900 dark:text-white focus:ring-2 focus:ring-indigo-600 outline-none disabled:opacity-50"
             />
           </div>
 
@@ -138,9 +163,10 @@ export const Register: React.FC = () => {
               name="password"
               type="password"
               required
+              disabled={isLoading}
               value={formData.password}
               onChange={handleChange}
-              className="block w-full px-4 py-3 rounded-xl bg-slate-50 dark:bg-slate-800 border-0 ring-1 ring-slate-200 dark:ring-slate-700 text-slate-900 dark:text-white focus:ring-2 focus:ring-indigo-600 outline-none"
+              className="block w-full px-4 py-3 rounded-xl bg-slate-50 dark:bg-slate-800 border-0 ring-1 ring-slate-200 dark:ring-slate-700 text-slate-900 dark:text-white focus:ring-2 focus:ring-indigo-600 outline-none disabled:opacity-50"
             />
             <p className="text-[10px] text-slate-400 mt-1 italic">Minimum 6 characters required.</p>
           </div>
@@ -149,7 +175,7 @@ export const Register: React.FC = () => {
             <button
               type="submit"
               disabled={isLoading}
-              className="w-full py-3 px-4 border border-transparent text-sm font-semibold rounded-xl text-white bg-indigo-600 hover:bg-indigo-700 focus:ring-2 focus:ring-indigo-500 shadow-lg shadow-indigo-200 dark:shadow-none disabled:opacity-70 transition-all"
+              className="w-full py-3 px-4 border border-transparent text-sm font-semibold rounded-xl text-white bg-indigo-600 hover:bg-indigo-700 focus:ring-2 focus:ring-indigo-500 shadow-lg shadow-indigo-200 dark:shadow-none disabled:opacity-70 transition-all flex justify-center items-center h-12"
             >
               {isLoading ? <Spinner size="sm" /> : 'Create Account'}
             </button>
