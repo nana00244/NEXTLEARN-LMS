@@ -1,7 +1,8 @@
 import React from 'react';
 import ReactDOM from 'react-dom/client';
 import App from './App';
-import { isConfigured, supabaseUrl } from './lib/supabase';
+// Fix: removed unexported and unused supabaseUrl from imports
+import { isConfigured } from './lib/supabase';
 
 const Root = () => {
   // If configuration is missing and it's not the hardcoded default, show warning

@@ -1,4 +1,3 @@
-
 import React, { createContext, useContext, useState, useEffect, useRef } from 'react';
 import { User, AuthState } from '../types';
 import { supabase } from '../lib/supabase';
@@ -23,15 +22,14 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   });
   
   const ignoreAuthEvents = useRef(false);
+  const isInitialized = useRef(false);
 
   const setIgnoreAuthEvents = (ignore: boolean) => {
-    console.log(`[AuthContext] ignoreAuthEvents set to: ${ignore}`);
     ignoreAuthEvents.current = ignore;
   };
 
   const loadUserProfile = async (token: string) => {
     try {
-      console.log("[AuthContext] Fetching profile for session...");
       const userProfile = await authService.getCurrentUser();
       
       if (userProfile) {
@@ -42,9 +40,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           isLoading: false,
         });
       } else {
-        console.warn("[AuthContext] Session exists but profile could not be resolved. Signing out.");
-        await supabase.auth.signOut();
-        setState({ token: null, user: null, isAuthenticated: false, isLoading: false });
+        // If session exists but profile doesn't, we might be in an inconsistent state
+        // or the user hasn't confirmed email yet if that's required.
+        setState(s => ({ ...s, isLoading: false, isAuthenticated: false }));
       }
     } catch (err) {
       console.error("[AuthContext] Profile load failed:", err);
@@ -55,13 +53,21 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   useEffect(() => {
     const initAuth = async () => {
       try {
-        console.log("[AuthContext] Checking initial session...");
+        // Add a safety timeout: if auth hasn't resolved in 5 seconds, stop loading
+        const timeout = setTimeout(() => {
+          if (!isInitialized.current) {
+            console.warn("[AuthContext] Auth initialization timed out. Releasing loading state.");
+            setState(s => ({ ...s, isLoading: false }));
+          }
+        }, 5000);
+
         const { data: { session } } = await supabase.auth.getSession();
+        isInitialized.current = true;
+        clearTimeout(timeout);
         
         if (session) {
           await loadUserProfile(session.access_token);
         } else {
-          console.log("[AuthContext] No active session found.");
           setState(s => ({ ...s, isLoading: false }));
         }
       } catch (err) {
@@ -73,16 +79,11 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     initAuth();
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
-      console.log(`[AuthContext] Event: ${event}`);
-      
-      if (ignoreAuthEvents.current) {
-        console.log("[AuthContext] IGNORING event because ignoreAuthEvents is TRUE");
-        return;
-      }
+      if (ignoreAuthEvents.current) return;
       
       if (session) {
-        // If we already have a user and the token hasn't changed, don't re-fetch
-        if (state.user && state.token === session.access_token) {
+        // Prevent unnecessary re-fetches if the user is already loaded
+        if (state.user?.id === session.user.id && state.token === session.access_token) {
           return;
         }
         await loadUserProfile(session.access_token);
@@ -146,7 +147,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     try {
       await authService.logout();
     } finally {
-      setState(s => ({ ...s, isLoading: false }));
+      setState({ token: null, user: null, isAuthenticated: false, isLoading: false });
     }
   };
 
