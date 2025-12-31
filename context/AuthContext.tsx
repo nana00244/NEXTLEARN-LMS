@@ -22,7 +22,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   });
   
   const ignoreAuthEvents = useRef(false);
-  const isInitialized = useRef(false);
   const currentUserRef = useRef<User | null>(null);
 
   const setIgnoreAuthEvents = (ignore: boolean) => {
@@ -53,22 +52,15 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   useEffect(() => {
     const initAuth = async () => {
       try {
-        const timeout = setTimeout(() => {
-          if (!isInitialized.current) {
-            setState(s => ({ ...s, isLoading: false }));
-          }
-        }, 5000);
-
         const { data: { session } } = await supabase.auth.getSession();
-        isInitialized.current = true;
-        clearTimeout(timeout);
         
         if (session) {
           await loadUserProfile(session.access_token);
         } else {
-          setState(s => ({ ...s, isLoading: false }));
+          setState(s => ({ ...s, isLoading: false, isAuthenticated: false }));
         }
       } catch (err) {
+        console.error("[AuthContext] Init error:", err);
         setState(s => ({ ...s, isLoading: false }));
       }
     };
@@ -79,12 +71,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       if (ignoreAuthEvents.current) return;
       
       if (session) {
-        // Use ref to avoid stale closure check against 'state'
-        if (currentUserRef.current?.id === session.user.id) {
-          return;
-        }
+        if (currentUserRef.current?.id === session.user.id) return;
         await loadUserProfile(session.access_token);
-      } else {
+      } else if (event === 'SIGNED_OUT') {
         currentUserRef.current = null;
         setState({
           token: null,
@@ -104,12 +93,11 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     setState(s => ({ ...s, isLoading: true }));
     try {
       const result = await authService.login(email, pass);
-      // Immediately update state to prevent ProtectedRoute from hanging
       if (result.user) {
         currentUserRef.current = result.user;
         setState({
           user: result.user,
-          token: result.session?.access_token || 'active-session',
+          token: result.session?.access_token || 'demo-token',
           isAuthenticated: true,
           isLoading: false
         });
@@ -146,10 +134,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     
     const updatedUser = { ...state.user, ...data };
     currentUserRef.current = updatedUser;
-    setState(s => ({
-      ...s,
-      user: updatedUser
-    }));
+    setState(s => ({ ...s, user: updatedUser }));
   };
 
   const logout = async () => {
