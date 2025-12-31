@@ -23,6 +23,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   
   const ignoreAuthEvents = useRef(false);
   const isInitialized = useRef(false);
+  const currentUserRef = useRef<User | null>(null);
 
   const setIgnoreAuthEvents = (ignore: boolean) => {
     ignoreAuthEvents.current = ignore;
@@ -33,6 +34,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       const userProfile = await authService.getCurrentUser();
       
       if (userProfile) {
+        currentUserRef.current = userProfile;
         setState({
           token,
           user: userProfile,
@@ -40,8 +42,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           isLoading: false,
         });
       } else {
-        // If session exists but profile doesn't, we might be in an inconsistent state
-        // or the user hasn't confirmed email yet if that's required.
         setState(s => ({ ...s, isLoading: false, isAuthenticated: false }));
       }
     } catch (err) {
@@ -53,10 +53,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   useEffect(() => {
     const initAuth = async () => {
       try {
-        // Add a safety timeout: if auth hasn't resolved in 5 seconds, stop loading
         const timeout = setTimeout(() => {
           if (!isInitialized.current) {
-            console.warn("[AuthContext] Auth initialization timed out. Releasing loading state.");
             setState(s => ({ ...s, isLoading: false }));
           }
         }, 5000);
@@ -71,7 +69,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           setState(s => ({ ...s, isLoading: false }));
         }
       } catch (err) {
-        console.error("[AuthContext] Auth initialization error:", err);
         setState(s => ({ ...s, isLoading: false }));
       }
     };
@@ -82,12 +79,13 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       if (ignoreAuthEvents.current) return;
       
       if (session) {
-        // Prevent unnecessary re-fetches if the user is already loaded
-        if (state.user?.id === session.user.id && state.token === session.access_token) {
+        // Use ref to avoid stale closure check against 'state'
+        if (currentUserRef.current?.id === session.user.id) {
           return;
         }
         await loadUserProfile(session.access_token);
       } else {
+        currentUserRef.current = null;
         setState({
           token: null,
           user: null,
@@ -105,7 +103,17 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const login = async (email: string, pass: string) => {
     setState(s => ({ ...s, isLoading: true }));
     try {
-      await authService.login(email, pass);
+      const result = await authService.login(email, pass);
+      // Immediately update state to prevent ProtectedRoute from hanging
+      if (result.user) {
+        currentUserRef.current = result.user;
+        setState({
+          user: result.user,
+          token: result.session?.access_token || 'active-session',
+          isAuthenticated: true,
+          isLoading: false
+        });
+      }
     } catch (err) {
       setState(s => ({ ...s, isLoading: false }));
       throw err;
@@ -136,9 +144,11 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       
     if (error) throw error;
     
+    const updatedUser = { ...state.user, ...data };
+    currentUserRef.current = updatedUser;
     setState(s => ({
       ...s,
-      user: s.user ? { ...s.user, ...data } : null
+      user: updatedUser
     }));
   };
 
@@ -147,6 +157,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     try {
       await authService.logout();
     } finally {
+      currentUserRef.current = null;
       setState({ token: null, user: null, isAuthenticated: false, isLoading: false });
     }
   };
