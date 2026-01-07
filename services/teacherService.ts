@@ -1,213 +1,137 @@
-
-import { supabase } from '../lib/supabase';
+import { 
+  collection, doc, getDocs, getDoc, setDoc, updateDoc, 
+  deleteDoc, query, where, orderBy, serverTimestamp 
+} from "firebase/firestore";
+import { db } from "../lib/firebase";
 import { Lesson, Topic, Class, Subject, Announcement } from '../types';
 
 export const teacherService = {
   getAssignedClasses: async (teacherUserId: string) => {
-    // 1. Get the teacher record
-    const { data: teacher } = await supabase
-      .from('teachers')
-      .select('id')
-      .eq('user_id', teacherUserId)
-      .single();
-
-    if (!teacher) return [];
-
-    // 2. Get the assigned classes
-    const { data, error } = await supabase
-      .from('class_subject_teachers')
-      .select(`
-        id,
-        class:class_id (*),
-        subject:subject_id (*)
-      `)
-      .eq('teacher_id', teacher.id);
-
-    if (error) throw error;
+    // Get teacher doc first
+    const tq = query(collection(db, "teachers"), where("userId", "==", teacherUserId));
+    const tSnap = await getDocs(tq);
+    if (tSnap.empty) return [];
     
-    // Map SnakeCase to CamelCase and fix structure
-    return data.map(tc => ({
-      ...tc,
-      classId: tc.class.id,
-      subjectId: tc.subject.id
+    const teacherId = tSnap.docs[0].id;
+    const q = query(collection(db, "teacher_classes"), where("teacherId", "==", teacherId));
+    const linksSnap = await getDocs(q);
+
+    return Promise.all(linksSnap.docs.map(async (linkDoc) => {
+      const link = linkDoc.data();
+      const [cSnap, sSnap] = await Promise.all([
+        getDoc(doc(db, "classes", link.classId)),
+        getDoc(doc(db, "subjects", link.subjectId))
+      ]);
+      return {
+        ...link,
+        id: linkDoc.id,
+        class: cSnap.exists() ? cSnap.data() : null,
+        subject: sSnap.exists() ? sSnap.data() : null
+      };
     }));
   },
 
   getClassById: async (id: string) => {
-    const { data, error } = await supabase.from('classes').select('*').eq('id', id).single();
-    if (error) throw error;
-    return {
-      ...data,
-      classCode: data.class_code
-    };
+    const snap = await getDoc(doc(db, "classes", id));
+    return snap.exists() ? { id: snap.id, ...snap.data() } as Class : null;
   },
 
-  getClassPeople: async (classId: string) => {
-    const { data: students } = await supabase
-      .from('students')
-      .select('*, profiles:user_id (*)')
-      .eq('class_id', classId);
-
-    const { data: teacherLinks } = await supabase
-      .from('class_subject_teachers')
-      .select('profiles:teacher_id (*)')
-      .eq('class_id', classId);
-
-    return {
-      students: students?.map(s => ({ 
-        ...s, 
-        user: { 
-          ...s.profiles,
-          firstName: s.profiles.first_name,
-          lastName: s.profiles.last_name
-        } 
-      })) || [],
-      teachers: Array.from(new Set(teacherLinks?.map(t => ({
-        ...t.profiles,
-        firstName: t.profiles.first_name,
-        lastName: t.profiles.last_name
-      })) || []))
-    };
-  },
-
-  // Fix: Added getClassRoster method
   getClassRoster: async (classId: string) => {
-    const { data, error } = await supabase
-      .from('students')
-      .select('*, profiles:user_id (*)')
-      .eq('class_id', classId);
+    const q = query(collection(db, "students"), where("classId", "==", classId));
+    const snap = await getDocs(q);
     
-    if (error) throw error;
-    return data.map(s => ({ 
-      ...s, 
-      user: {
-        ...s.profiles,
-        firstName: s.profiles.first_name,
-        lastName: s.profiles.last_name
-      }
-    }));
-  },
-
-  getClassAnnouncements: async (classId: string, subjectId: string) => {
-    const { data, error } = await supabase
-      .from('announcements')
-      .select('*')
-      .eq('target_class_id', classId)
-      .order('posted_date', { ascending: false });
-    
-    if (error) throw error;
-    return data.map(a => ({
-      ...a,
-      postedDate: a.posted_date
+    return Promise.all(snap.docs.map(async (d) => {
+      const student = d.data();
+      const uSnap = await getDoc(doc(db, "users", student.userId));
+      return { ...student, id: d.id, user: uSnap.exists() ? uSnap.data() : null };
     }));
   },
 
   postAnnouncement: async (classId: string, subjectId: string, teacherId: string, content: string, attachments: any[] = []) => {
-    const { data, error } = await supabase
-      .from('announcements')
-      .insert({
-        target_class_id: classId,
-        author_id: teacherId,
-        content,
-        posted_date: new Date().toISOString()
-      })
-      .select()
-      .single();
-
-    if (error) throw error;
-    return data;
-  },
-
-  getLessons: async (classId: string, subjectId: string) => {
-    const { data, error } = await supabase
-      .from('lessons')
-      .select('*')
-      .eq('class_id', classId)
-      .eq('subject_id', subjectId)
-      .order('is_pinned', { ascending: false })
-      .order('posted_date', { ascending: false });
-    
-    if (error) throw error;
-    return data.map(l => ({
-      ...l,
-      classId: l.class_id,
-      subjectId: l.subject_id,
-      teacherId: l.teacher_id,
-      videoUrl: l.video_url,
-      isPublished: l.is_published,
-      isPinned: l.is_pinned,
-      postedDate: l.posted_date,
-      topicId: l.topic_id
-    }));
-  },
-
-  createLesson: async (lessonData: Partial<Lesson>) => {
-    // Map CamelCase to SnakeCase
-    const insertData = {
-      title: lessonData.title,
-      content: lessonData.content,
-      class_id: lessonData.classId,
-      subject_id: lessonData.subjectId,
-      teacher_id: lessonData.teacherId,
-      video_url: lessonData.videoUrl,
-      is_published: lessonData.isPublished,
-      is_pinned: lessonData.isPinned,
-      topic_id: lessonData.topicId,
-      posted_date: new Date().toISOString()
+    const id = "ann_" + Math.random().toString(36).substr(2, 9);
+    const announcement = {
+      id,
+      targetClassId: classId,
+      subjectId,
+      authorId: teacherId,
+      content,
+      postedDate: new Date().toISOString(),
+      attachments: attachments || []
     };
-
-    const { data, error } = await supabase.from('lessons').insert(insertData).select().single();
-    if (error) throw error;
-    return data;
+    await setDoc(doc(db, "announcements", id), announcement);
+    return announcement;
   },
 
-  // Fix: Added deleteLesson method
-  deleteLesson: async (id: string) => {
-    const { error } = await supabase.from('lessons').delete().eq('id', id);
-    if (error) throw error;
+  getClassAnnouncements: async (classId: string, subjectId: string) => {
+    const q = query(collection(db, "announcements"), where("targetClassId", "==", classId), orderBy("postedDate", "desc"));
+    const snap = await getDocs(q);
+    return snap.docs.map(d => d.data()) as Announcement[];
   },
 
-  // Fix: Added updateLesson method
-  updateLesson: async (id: string, updates: Partial<Lesson>) => {
-    const dbUpdates: any = {};
-    if (updates.title !== undefined) dbUpdates.title = updates.title;
-    if (updates.content !== undefined) dbUpdates.content = updates.content;
-    if (updates.videoUrl !== undefined) dbUpdates.video_url = updates.videoUrl;
-    if (updates.isPublished !== undefined) dbUpdates.is_published = updates.isPublished;
-    if (updates.isPinned !== undefined) dbUpdates.is_pinned = updates.isPinned;
-    if (updates.topicId !== undefined) dbUpdates.topic_id = updates.topicId;
-
-    const { error } = await supabase.from('lessons').update(dbUpdates).eq('id', id);
-    if (error) throw error;
+  // Fix: Added getLessons method
+  getLessons: async (classId: string, subjectId: string) => {
+    const q = query(collection(db, "lessons"), where("classId", "==", classId), where("subjectId", "==", subjectId), orderBy("postedDate", "desc"));
+    const snap = await getDocs(q);
+    return snap.docs.map(d => ({ id: d.id, ...d.data() })) as Lesson[];
   },
 
   // Fix: Added getTopics method
   getTopics: async (classId: string, subjectId: string) => {
-    const { data, error } = await supabase
-      .from('topics')
-      .select('*')
-      .eq('class_id', classId)
-      .eq('subject_id', subjectId)
-      .order('order', { ascending: true });
-    
-    if (error) throw error;
-    return data;
+    const q = query(collection(db, "topics"), where("classId", "==", classId), where("subjectId", "==", subjectId), orderBy("order", "asc"));
+    const snap = await getDocs(q);
+    return snap.docs.map(d => ({ id: d.id, ...d.data() })) as Topic[];
   },
 
   // Fix: Added createTopic method
   createTopic: async (name: string, classId: string, subjectId: string) => {
-    const { data, error } = await supabase
-      .from('topics')
-      .insert({
-        name,
-        class_id: classId,
-        subject_id: subjectId,
-        order: 0
-      })
-      .select()
-      .single();
-    
-    if (error) throw error;
-    return data;
+    const id = "top_" + Math.random().toString(36).substr(2, 9);
+    const topic = { id, name, classId, subjectId, order: Date.now() };
+    await setDoc(doc(db, "topics", id), topic);
+    return topic;
+  },
+
+  // Fix: Added createLesson method
+  createLesson: async (data: Partial<Lesson>) => {
+    const id = "les_" + Math.random().toString(36).substr(2, 9);
+    const lesson = {
+      ...data,
+      id,
+      postedDate: new Date().toISOString(),
+      attachments: data.attachments || []
+    };
+    await setDoc(doc(db, "lessons", id), lesson);
+    return lesson;
+  },
+
+  // Fix: Added deleteLesson method
+  deleteLesson: async (id: string) => {
+    await deleteDoc(doc(db, "lessons", id));
+  },
+
+  // Fix: Added updateLesson method
+  updateLesson: async (id: string, data: Partial<Lesson>) => {
+    await updateDoc(doc(db, "lessons", id), data);
+  },
+
+  // Fix: Added getClassPeople method
+  getClassPeople: async (classId: string) => {
+    const [roster, tcSnap] = await Promise.all([
+      teacherService.getClassRoster(classId),
+      getDocs(query(collection(db, "teacher_classes"), where("classId", "==", classId)))
+    ]);
+
+    const teacherLinks = tcSnap.docs.map(d => d.data());
+    const teachers = await Promise.all(teacherLinks.map(async (link) => {
+      const tSnap = await getDoc(doc(db, "teachers", link.teacherId));
+      if (!tSnap.exists()) return null;
+      const tData = tSnap.data();
+      const uSnap = await getDoc(doc(db, "users", tData.userId));
+      return uSnap.exists() ? uSnap.data() : null;
+    }));
+
+    return {
+      students: roster,
+      teachers: teachers.filter(Boolean)
+    };
   }
 };

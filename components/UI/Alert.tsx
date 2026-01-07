@@ -1,4 +1,3 @@
-
 import React from 'react';
 
 interface AlertProps {
@@ -16,10 +15,24 @@ export const Alert: React.FC<AlertProps> = ({ type, message, onClose }) => {
   };
 
   return (
-    <div className={`p-4 mb-4 border rounded-lg flex justify-between items-center ${styles[type]}`}>
-      <span className="text-sm font-medium">{message}</span>
+    <div 
+      className={`p-4 md:p-5 mb-4 border rounded-2xl flex justify-between items-center shadow-sm animate-in fade-in slide-in-from-top-1 ${styles[type]} animated`}
+      role="alert"
+    >
+      <div className="flex items-center gap-3">
+        <span className="text-xl" aria-hidden="true">
+          {type === 'success' ? '✅' : type === 'error' ? '⚠️' : 'ℹ️'}
+        </span>
+        <span className="text-sm font-bold leading-tight">{message}</span>
+      </div>
       {onClose && (
-        <button onClick={onClose} className="ml-4 text-lg font-bold opacity-60 hover:opacity-100">&times;</button>
+        <button 
+          onClick={onClose} 
+          className="ml-4 w-12 h-12 flex items-center justify-center rounded-xl hover:bg-black/5 dark:hover:bg-white/5 transition-all active:scale-90 ripple"
+          aria-label="Dismiss alert"
+        >
+          <span className="text-2xl leading-none">&times;</span>
+        </button>
       )}
     </div>
   );

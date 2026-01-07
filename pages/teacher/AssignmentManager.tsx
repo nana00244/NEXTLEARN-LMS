@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '../../context/AuthContext';
 import { assignmentService } from '../../services/assignmentService';
@@ -104,75 +103,71 @@ export const AssignmentManager: React.FC = () => {
            <div className="bg-white dark:bg-slate-900 rounded-[2.5rem] p-10 max-w-2xl w-full shadow-2xl border border-slate-100 dark:border-slate-800 max-h-[90vh] overflow-y-auto">
               <h2 className="text-2xl font-black text-slate-900 dark:text-white mb-8">New Assignment</h2>
               <form onSubmit={handleSubmit} className="space-y-6">
-                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                    <div className="md:col-span-2">
-                        <label className="block text-xs font-bold uppercase text-slate-400 mb-2">Title</label>
-                        <input 
-                            required 
-                            className="w-full px-4 py-3 rounded-xl bg-slate-50 dark:bg-slate-800 border-0 outline-none focus:ring-2 focus:ring-indigo-600 dark:text-white" 
-                            placeholder="Homework #1: Algebraic Functions"
-                            value={form.title}
-                            onChange={e => setForm({...form, title: e.target.value})}
-                        />
-                    </div>
-                    <div className="md:col-span-2">
-                        <label className="block text-xs font-bold uppercase text-slate-400 mb-2">Instructions</label>
-                        <textarea 
-                            rows={4}
-                            className="w-full px-4 py-3 rounded-xl bg-slate-50 dark:bg-slate-800 border-0 outline-none focus:ring-2 focus:ring-indigo-600 dark:text-white resize-none" 
-                            placeholder="Detailed steps for students..."
-                            value={form.instructions}
-                            onChange={e => setForm({...form, instructions: e.target.value})}
-                        />
-                    </div>
-                    <div>
-                        <label className="block text-xs font-bold uppercase text-slate-400 mb-2">Points</label>
-                        <input 
-                            type="number"
-                            className="w-full px-4 py-3 rounded-xl bg-slate-50 dark:bg-slate-800 border-0 outline-none focus:ring-2 focus:ring-indigo-600 dark:text-white"
-                            value={form.points}
-                            onChange={e => setForm({...form, points: parseInt(e.target.value)})}
-                        />
-                    </div>
-                    <div>
-                        <label className="block text-xs font-bold uppercase text-slate-400 mb-2">Target Class</label>
-                        <select 
-                            required
-                            className="w-full px-4 py-3 rounded-xl bg-slate-50 dark:bg-slate-800 border-0 outline-none focus:ring-2 focus:ring-indigo-600 dark:text-white"
-                            onChange={e => {
-                                const tc = classes.find(c => c.id === e.target.value);
-                                setForm({...form, classId: tc.classId, subjectId: tc.subjectId});
-                            }}
-                        >
-                            <option value="">Select Class</option>
-                            {classes.map(c => <option key={c.id} value={c.id}>{c.class.name} - {c.subject.name}</option>)}
-                        </select>
-                    </div>
-                    <div>
-                        <label className="block text-xs font-bold uppercase text-slate-400 mb-2">Due Date</label>
-                        <input 
-                            type="date"
-                            required
-                            className="w-full px-4 py-3 rounded-xl bg-slate-50 dark:bg-slate-800 border-0 outline-none focus:ring-2 focus:ring-indigo-600 dark:text-white"
-                            value={form.dueDate}
-                            onChange={e => setForm({...form, dueDate: e.target.value})}
-                        />
-                    </div>
-                    <div>
-                        <label className="block text-xs font-bold uppercase text-slate-400 mb-2">Due Time</label>
-                        <input 
-                            type="time"
-                            className="w-full px-4 py-3 rounded-xl bg-slate-50 dark:bg-slate-800 border-0 outline-none focus:ring-2 focus:ring-indigo-600 dark:text-white"
-                            value={form.dueTime}
-                            onChange={e => setForm({...form, dueTime: e.target.value})}
-                        />
-                    </div>
-                 </div>
+                <div className="form-group">
+                  <label>Title</label>
+                  <input 
+                    required 
+                    placeholder="Homework #1: Algebraic Functions"
+                    value={form.title}
+                    onChange={e => setForm({...form, title: e.target.value})}
+                  />
+                </div>
+                <div className="form-group">
+                  <label>Instructions</label>
+                  <textarea 
+                    rows={4}
+                    placeholder="Detailed steps for students..."
+                    value={form.instructions}
+                    onChange={e => setForm({...form, instructions: e.target.value})}
+                  />
+                </div>
+                <div className="form-row">
+                  <div className="form-group">
+                    <label>Points</label>
+                    <input 
+                      type="number"
+                      value={form.points}
+                      onChange={e => setForm({...form, points: parseInt(e.target.value)})}
+                    />
+                  </div>
+                  <div className="form-group">
+                    <label>Target Class</label>
+                    <select 
+                      required
+                      onChange={e => {
+                        const tc = classes.find(c => c.id === e.target.value);
+                        setForm({...form, classId: tc.classId, subjectId: tc.subjectId});
+                      }}
+                    >
+                      <option value="">Select Class</option>
+                      {classes.map(c => <option key={c.id} value={c.id}>{c.class.name} - {c.subject.name}</option>)}
+                    </select>
+                  </div>
+                </div>
+                <div className="form-row">
+                  <div className="form-group">
+                    <label>Due Date</label>
+                    <input 
+                      type="date"
+                      required
+                      value={form.dueDate}
+                      onChange={e => setForm({...form, dueDate: e.target.value})}
+                    />
+                  </div>
+                  <div className="form-group">
+                    <label>Due Time</label>
+                    <input 
+                      type="time"
+                      value={form.dueTime}
+                      onChange={e => setForm({...form, dueTime: e.target.value})}
+                    />
+                  </div>
+                </div>
 
-                 <div className="flex gap-4 pt-8">
-                    <button type="submit" className="flex-1 py-4 bg-indigo-600 text-white rounded-2xl font-bold shadow-xl hover:bg-indigo-700 transition-all">Create Assignment</button>
-                    <button type="button" onClick={() => setShowAdd(false)} className="px-8 py-4 bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 rounded-2xl font-bold">Cancel</button>
-                 </div>
+                <div className="modal-footer pt-8">
+                  <button type="submit" className="bg-indigo-600 text-white rounded-2xl font-bold shadow-xl hover:bg-indigo-700 transition-all">Create Assignment</button>
+                  <button type="button" onClick={() => setShowAdd(false)} className="bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 rounded-2xl font-bold">Cancel</button>
+                </div>
               </form>
            </div>
         </div>

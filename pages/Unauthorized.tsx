@@ -1,25 +1,28 @@
-
 import React from 'react';
 import { Link } from 'react-router-dom';
 
 export const Unauthorized: React.FC = () => {
   return (
-    <div className="min-h-[60vh] flex flex-col items-center justify-center text-center px-4">
-      <div className="bg-rose-100 dark:bg-rose-900/30 p-6 rounded-full mb-6">
-        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-12 h-12 text-rose-600 dark:text-rose-400">
-          <path strokeLinecap="round" strokeLinejoin="round" d="M18.364 18.364A9 9 0 005.636 5.636m12.728 12.728A9 9 0 015.636 5.636m12.728 12.728L5.636 5.636" />
-        </svg>
+    <div className="min-h-[70vh] flex flex-col items-center justify-center text-center px-6">
+      <div className="bg-red-50 dark:bg-red-900/10 p-10 rounded-[2.5rem] mb-10 shadow-sm border border-red-100 dark:border-red-900/30">
+        <div className="w-24 h-24 bg-red-100 dark:bg-red-900/30 rounded-3xl flex items-center justify-center text-5xl mx-auto mb-6">
+          🚫
+        </div>
+        <h1 className="text-4xl font-black text-gray-900 dark:text-white tracking-tight mb-3">Restricted Access</h1>
+        <p className="text-gray-500 dark:text-gray-400 max-w-sm mx-auto font-medium leading-relaxed">
+          The requested resource requires higher administrative privileges than your current profile provides.
+        </p>
       </div>
-      <h1 className="text-4xl font-extrabold text-slate-900 dark:text-white mb-2">Access Denied</h1>
-      <p className="text-slate-600 dark:text-slate-400 mb-8 max-w-md">
-        Oops! It looks like you don't have permission to access this page. Please contact your administrator if you believe this is an error.
-      </p>
-      <Link 
-        to="/" 
-        className="px-6 py-3 bg-indigo-600 hover:bg-indigo-700 text-white font-semibold rounded-xl shadow-lg shadow-indigo-200 dark:shadow-none transition-all"
-      >
-        Go to Dashboard
-      </Link>
+      
+      <div className="space-y-4">
+        <Link 
+          to="/" 
+          className="inline-flex px-10 py-4 bg-indigo-600 hover:bg-indigo-700 text-white font-black uppercase tracking-widest rounded-xl shadow-xl transition-all"
+        >
+          Back to Dashboard
+        </Link>
+        <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest">Error Code: 403 Forbidden</p>
+      </div>
     </div>
   );
 };

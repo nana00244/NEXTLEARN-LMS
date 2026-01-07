@@ -1,59 +1,65 @@
-
 import React from 'react';
 import { useAuth } from '../../context/AuthContext';
 import { useTheme } from '../../context/ThemeContext';
+import { useNavigate } from 'react-router-dom';
 
-export const Navbar: React.FC = () => {
+interface NavbarProps {
+  onMenuToggle: () => void;
+}
+
+export const Navbar: React.FC<NavbarProps> = ({ onMenuToggle }) => {
   const { user, logout } = useAuth();
-  const { theme, toggleTheme } = useTheme();
+  const { isDarkMode, toggleTheme } = useTheme();
+  const navigate = useNavigate();
+
+  if (!user) return null;
 
   return (
-    <nav className="h-16 bg-white dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800 px-4 flex items-center justify-between sticky top-0 z-50">
-      <div className="flex items-center gap-2">
-        <div className="w-8 h-8 bg-indigo-600 rounded-lg flex items-center justify-center">
-          <span className="text-white font-bold text-xl">N</span>
-        </div>
-        <span className="text-xl font-bold tracking-tight text-slate-800 dark:text-white">NextLearn</span>
+    <nav className="top-nav">
+      <div className="flex items-center gap-4">
+        <button 
+          onClick={onMenuToggle}
+          className="md:hidden p-2 rounded-lg text-gray-500 hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors"
+        >
+          <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-6 h-6">
+            <path strokeLinecap="round" strokeLinejoin="round" d="M3.75 6.75h16.5M3.75 12h16.5m-16.5 5.25h16.5" />
+          </svg>
+        </button>
+        <span className="text-sm font-bold text-gray-400 uppercase tracking-widest hidden sm:block">NextLearn LMS</span>
       </div>
 
       <div className="flex items-center gap-4">
         <button 
           onClick={toggleTheme}
-          className="p-2 rounded-full hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-600 dark:text-slate-400"
-          title={`Switch to ${theme === 'light' ? 'dark' : 'light'} mode`}
+          className="theme-toggle-btn"
+          title={isDarkMode ? 'Switch to Light Mode' : 'Switch to Dark Mode'}
+          aria-label="Toggle theme"
         >
-          {theme === 'light' ? (
-            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-5 h-5">
-              <path strokeLinecap="round" strokeLinejoin="round" d="M21.752 15.002A9.718 9.718 0 0118 15.75c-5.385 0-9.75-4.365-9.75-9.75 0-1.33.266-2.597.748-3.752A9.753 9.753 0 003 11.25C3 16.635 7.365 21 12.75 21a9.753 9.753 0 009.002-5.998z" />
-            </svg>
-          ) : (
-            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-5 h-5">
-              <path strokeLinecap="round" strokeLinejoin="round" d="M12 3v2.25m6.364.386l-1.591 1.591M21 12h-2.25m-.386 6.364l-1.591-1.591M12 18.75V21m-4.773-4.227l-1.591 1.591M3 12h2.25m.386-4.773l1.591-1.591M12 15.75a3.75 3.75 0 100-7.5 3.75 3.75 0 000 7.5z" />
-            </svg>
-          )}
+          {isDarkMode ? '☀️' : '🌙'}
         </button>
 
-        {user && (
-          <div className="flex items-center gap-3 pl-4 border-l border-slate-200 dark:border-slate-800">
-            <div className="w-10 h-10 rounded-full bg-indigo-100 dark:bg-indigo-900/30 flex items-center justify-center text-indigo-600 font-bold overflow-hidden">
-              {user.profilePicture ? (
-                <img src={user.profilePicture} alt="Profile" className="w-full h-full object-cover" />
-              ) : (
-                <span>{user.firstName[0]}{user.lastName[0]}</span>
-              )}
-            </div>
-            <div className="hidden md:block text-right">
-              <p className="text-sm font-semibold text-slate-800 dark:text-white leading-none">{user.firstName} {user.lastName}</p>
-              <p className="text-xs text-slate-500 dark:text-slate-400 capitalize">{user.role}</p>
-            </div>
-            <button 
-              onClick={logout}
-              className="px-3 py-1.5 text-sm font-medium text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-900/20 rounded-md transition-colors"
-            >
-              Logout
-            </button>
+        <div 
+          className="flex items-center gap-3 px-3 py-1.5 rounded-xl hover:bg-gray-100 dark:hover:bg-gray-800 cursor-pointer transition-colors"
+          onClick={() => navigate('/profile')}
+        >
+          <div className="w-9 h-9 rounded-full bg-indigo-600 text-white flex items-center justify-center font-bold text-xs uppercase shadow-sm">
+            {user.firstName[0]}{user.lastName[0]}
           </div>
-        )}
+          <div className="hidden lg:block text-left">
+            <p className="text-sm font-bold leading-none">{user.firstName} {user.lastName}</p>
+            <p className="text-[10px] text-gray-400 uppercase font-black tracking-tighter mt-1">{user.role}</p>
+          </div>
+        </div>
+
+        <button 
+          onClick={logout}
+          className="p-2 text-gray-400 hover:text-red-500 transition-colors"
+          title="Logout"
+        >
+          <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-5 h-5">
+            <path strokeLinecap="round" strokeLinejoin="round" d="M15.75 9V5.25A2.25 2.25 0 0013.5 3h-6a2.25 2.25 0 00-2.25 2.25v13.5A2.25 2.25 0 007.5 21h6a2.25 2.25 0 002.25-2.25V15m3 0l3-3m0 0l-3-3m3 3H9" />
+          </svg>
+        </button>
       </div>
     </nav>
   );

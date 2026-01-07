@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { teacherService } from '../../services/teacherService';
@@ -32,41 +31,43 @@ export const TeacherRoster: React.FC = () => {
       </header>
 
       <div className="bg-white dark:bg-slate-900 rounded-[2rem] border border-slate-100 dark:border-slate-800 overflow-hidden shadow-sm">
-        <table className="w-full text-left">
-          <thead className="bg-slate-50 dark:bg-slate-800/50">
-            <tr>
-              <th className="px-8 py-5 text-[10px] font-black text-slate-400 uppercase tracking-widest">Student Name</th>
-              <th className="px-8 py-5 text-[10px] font-black text-slate-400 uppercase tracking-widest">Admission No.</th>
-              <th className="px-8 py-5 text-[10px] font-black text-slate-400 uppercase tracking-widest">Status</th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
-            {students.map(student => (
-              <tr key={student.id} className="hover:bg-slate-50/50 transition-all">
-                <td className="px-8 py-5">
-                  <div className="flex items-center gap-4">
-                    <div className="w-10 h-10 rounded-xl bg-indigo-100 dark:bg-indigo-900/30 flex items-center justify-center text-indigo-600 font-bold text-xs">
-                      {student.user?.firstName[0]}{student.user?.lastName[0]}
-                    </div>
-                    <div>
-                      <p className="text-sm font-bold text-slate-900 dark:text-white">{student.user?.firstName} {student.user?.lastName}</p>
-                      <p className="text-xs text-slate-400">{student.user?.email}</p>
-                    </div>
-                  </div>
-                </td>
-                <td className="px-8 py-5 text-sm font-mono text-slate-600 dark:text-slate-400">{student.admissionNumber}</td>
-                <td className="px-8 py-5">
-                   <span className="px-2.5 py-0.5 bg-emerald-50 text-emerald-600 rounded-full text-[10px] font-black uppercase">Enrolled</span>
-                </td>
-              </tr>
-            ))}
-            {students.length === 0 && (
+        <div className="table-wrapper">
+          <table className="w-full text-left">
+            <thead className="bg-slate-50 dark:bg-slate-800/50">
               <tr>
-                <td colSpan={3} className="p-20 text-center text-slate-500 italic">No students are currently enrolled in this class.</td>
+                <th className="px-8 py-5 text-[10px] font-black text-slate-400 uppercase tracking-widest">Student Name</th>
+                <th className="px-8 py-5 text-[10px] font-black text-slate-400 uppercase tracking-widest">Admission No.</th>
+                <th className="px-8 py-5 text-[10px] font-black text-slate-400 uppercase tracking-widest">Status</th>
               </tr>
-            )}
-          </tbody>
-        </table>
+            </thead>
+            <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
+              {students.map(student => (
+                <tr key={student.id} className="hover:bg-slate-50/50 transition-all">
+                  <td className="px-8 py-5" data-label="Student">
+                    <div className="flex items-center gap-4">
+                      <div className="w-10 h-10 rounded-xl bg-indigo-100 dark:bg-indigo-900/30 flex items-center justify-center text-indigo-600 font-bold text-xs">
+                        {student.user?.firstName[0]}{student.user?.lastName[0]}
+                      </div>
+                      <div className="text-left">
+                        <p className="text-sm font-bold text-slate-800 dark:text-white">{student.user?.firstName} {student.user?.lastName}</p>
+                        <p className="text-xs text-slate-400">{student.user?.email}</p>
+                      </div>
+                    </div>
+                  </td>
+                  <td className="px-8 py-5 text-sm font-mono font-bold text-slate-600 dark:text-slate-400" data-label="ID">{student.admissionNumber}</td>
+                  <td className="px-8 py-5" data-label="Status">
+                     <span className="px-2.5 py-0.5 bg-emerald-50 text-emerald-600 rounded-full text-[10px] font-black uppercase">Enrolled</span>
+                  </td>
+                </tr>
+              ))}
+              {students.length === 0 && (
+                <tr>
+                  <td colSpan={3} className="p-20 text-center text-slate-500 italic">No students are currently enrolled in this class.</td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
       </div>
     </div>
   );

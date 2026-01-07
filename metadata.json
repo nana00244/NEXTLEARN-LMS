@@ -1,5 +1,5 @@
 {
-  "name": "NextLearn LMS ",
-  "description": "Foundation & Authentication System for NextLearn LMS, including role-based access, theme management, and secure registration/login simulation.",
+  "name": "NextLearn LMS - bv3",
+  "description": "Foundation & Authentication System for NextLearn LMS. Build Version 3 (bv3) includes redesigned Payment Collection & Receipt interfaces, conditional arrears display, and a robust new-window print solution to bypass sandbox restrictions.",
   "requestFramePermissions": []
 }

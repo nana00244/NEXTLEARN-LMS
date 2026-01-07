@@ -1,502 +1,370 @@
-import { supabase, isConfigured } from '../lib/supabase';
-import { Student, User, Class, UserRole, Teacher, Subject } from '../types';
 import { 
-  getStoredStudents, saveStudents,
-  getStoredUsers, saveUsers,
-  getStoredClasses, saveClasses,
-  getStoredSubjects, saveSubjects,
-  getStoredTeachers, saveTeachers,
-  getStoredTeacherClasses, saveTeacherClasses
-} from './mockDb';
-
-// Helper to generate random passwords for new enrollments
-const generatePassword = () => 'NextLearn' + Math.floor(1000 + Math.random() * 9000);
-
-const mapClassFromDb = (c: any) => ({
-  ...c,
-  gradeLevel: c.grade_level || c.gradelevel || 'N/A',
-  classCode: c.class_code || c.classcode || 'N/A',
-  studentCount: c.students?.[0]?.count || 0,
-  teachers: c.class_subject_teachers?.map((link: any) => {
-    const profile = link.teachers?.profiles;
-    return {
-      id: link.id,
-      name: profile ? `${profile.first_name} ${profile.last_name}` : 'Staff Member',
-      subject: link.subjects?.name || 'General'
-    };
-  }) || []
-});
-
-const mapStudentFromDb = (s: any) => ({
-  ...s,
-  admissionNumber: s.admission_number || s.admissionnumber,
-  classId: s.class_id || s.classid,
-  user: s.profiles ? {
-    ...s.profiles,
-    firstName: s.profiles.first_name,
-    lastName: s.profiles.last_name,
-    email: s.profiles.email
-  } : null,
-  class: s.classes
-});
-
-const mapTeacherFromDb = (t: any) => ({
-  ...t,
-  employeeId: t.employee_id || t.employeeId,
-  user: t.profiles ? {
-    ...t.profiles,
-    firstName: t.profiles.first_name,
-    lastName: t.profiles.last_name,
-    email: t.profiles.email
-  } : null,
-  assignments: t.class_subject_teachers?.map((link: any) => ({
-    id: link.id,
-    className: link.classes?.name || 'Unknown Class',
-    subjectName: link.subjects?.name || 'General'
-  })) || []
-});
+  collection, doc, getDocs, getDoc, setDoc, updateDoc, 
+  deleteDoc, query, where, writeBatch, serverTimestamp 
+} from "firebase/firestore";
+import { db } from "../lib/firebase";
+import { financeService } from "./financeService";
+import { Student, User, Class, Teacher, Subject, UserRole } from '../types';
 
 export const adminService = {
-  // Stats
   getStats: async () => {
-    if (!isConfigured) {
-      return {
-        studentsCount: getStoredStudents().length,
-        staffCount: getStoredUsers().filter(u => u.role !== 'student').length,
-        classesCount: getStoredClasses().length,
-        recentActivity: [
-          { id: 1, text: 'Running in local Demo Mode', time: 'Just now' },
-          { id: 2, text: 'Using internal mock database', time: 'Just now' }
-        ]
-      };
-    }
+    const results = await Promise.allSettled([
+      getDocs(collection(db, "students")),
+      getDocs(collection(db, "users")),
+      getDocs(collection(db, "classes"))
+    ]);
 
-    try {
-      const { count: studentCount } = await supabase.from('students').select('*', { count: 'exact', head: true });
-      const { count: staffCount } = await supabase.from('profiles').select('*', { count: 'exact', head: true }).neq('role', 'student');
-      const { count: classesCount } = await supabase.from('classes').select('*', { count: 'exact', head: true });
+    const studentsSnap = results[0].status === 'fulfilled' ? results[0].value : null;
+    const usersSnap = results[1].status === 'fulfilled' ? results[1].value : null;
+    const classesSnap = results[2].status === 'fulfilled' ? results[2].value : null;
 
-      return {
-        studentsCount: studentCount || 0,
-        staffCount: staffCount || 0,
-        classesCount: classesCount || 0,
-        recentActivity: [
-          { id: 1, text: 'System synced with Supabase Realtime', time: 'Just now' },
-          { id: 2, text: 'Security policies updated', time: '1m ago' }
-        ]
-      };
-    } catch (err) {
-      return { studentsCount: 0, staffCount: 0, classesCount: 0, recentActivity: [] };
-    }
+    return {
+      studentsCount: studentsSnap ? studentsSnap.size : 0,
+      staffCount: usersSnap ? usersSnap.docs.filter(d => d.data().role !== 'student').length : 0,
+      classesCount: classesSnap ? classesSnap.size : 0,
+      recentActivity: [
+        { id: 1, text: 'System connected to Firebase Firestore', time: 'Live' },
+        { id: 2, text: 'Real-time database active', time: 'Just now' }
+      ]
+    };
   },
 
-  // Student Management
   getStudents: async () => {
-    if (!isConfigured) return getStoredStudents().map(s => ({...s, user: getStoredUsers().find(u => u.id === s.userId)}));
-    const { data, error } = await supabase.from('students').select('*, profiles:user_id (*), classes:class_id (*)');
-    if (error) throw error;
-    return data.map(mapStudentFromDb);
-  },
-
-  getStudentsByClass: async (classId: string) => {
-    if (!isConfigured) return getStoredStudents()
-      .filter(s => s.classId === classId)
-      .map(s => ({...s, user: getStoredUsers().find(u => u.id === s.userId)}));
+    const studentsSnap = await getDocs(collection(db, "students"));
+    const students = studentsSnap.docs.map(d => ({ id: d.id, ...d.data() }));
     
-    const { data, error } = await supabase
-      .from('students')
-      .select('*, profiles:user_id (*), classes:class_id (*)')
-      .eq('class_id', classId);
-    if (error) throw error;
-    return data.map(mapStudentFromDb);
-  },
-
-  addStudent: async (studentData: any, userData: any) => {
-    const password = userData.password || generatePassword();
-    if (!isConfigured) {
-      const users = getStoredUsers();
-      const newUser = {
-        id: 'u_s_' + Math.random().toString(36).substr(2, 9),
-        email: userData.email,
-        firstName: userData.firstName,
-        lastName: userData.lastName,
-        role: 'student',
-        passwordHash: password,
-        themePreference: 'light',
-        isActive: true,
-        createdAt: new Date().toISOString()
+    const enriched = await Promise.all(students.map(async (s: any) => {
+      const [uSnap, cSnap] = await Promise.all([
+        getDoc(doc(db, "users", s.userId)),
+        s.classId ? getDoc(doc(db, "classes", s.classId)) : Promise.resolve(null)
+      ]);
+      return {
+        ...s,
+        user: uSnap.exists() ? uSnap.data() : null,
+        class: cSnap?.exists() ? cSnap.data() : null
       };
-      saveUsers([...users, newUser]);
-
-      const students = getStoredStudents();
-      const newStudent = {
-        id: 's_' + Math.random().toString(36).substr(2, 9),
-        userId: newUser.id,
-        admissionNumber: studentData.admissionNumber,
-        classId: studentData.classId,
-        status: studentData.status || 'active',
-        enrollmentDate: new Date().toISOString()
-      };
-      saveStudents([...students, newStudent]);
-
-      return { student: newStudent, credentials: { email: newUser.email, password } };
-    }
-
-    const { data: authData, error: authError } = await supabase.auth.signUp({
-      email: userData.email,
-      password,
-      options: { data: { first_name: userData.firstName, last_name: userData.lastName, role: 'student' } }
-    });
-    if (authError) throw authError;
-
-    // Manually create profile to ensure FK constraints are met immediately
-    await supabase.from('profiles').upsert({
-      id: authData.user?.id,
-      email: userData.email,
-      first_name: userData.firstName,
-      last_name: userData.lastName,
-      role: 'student'
-    });
-
-    const { data: student, error: studentError } = await supabase.from('students').insert({
-      user_id: authData.user?.id,
-      admission_number: studentData.admissionNumber,
-      class_id: studentData.classId,
-      status: studentData.status || 'active'
-    }).select().single();
-    if (studentError) throw studentError;
-
-    return { student, credentials: { email: userData.email, password } };
+    }));
+    
+    return enriched;
   },
 
-  updateStudent: async (id: string, studentData: any, userData: any): Promise<{ success: boolean; credentials?: { email: string; password: string } }> => {
-    const credentials = userData.password ? { email: userData.email, password: userData.password } : undefined;
-
-    if (!isConfigured) {
-      const students = getStoredStudents();
-      const idx = students.findIndex(s => s.id === id);
-      if (idx !== -1) {
-        students[idx] = { ...students[idx], ...studentData };
-        saveStudents(students);
-        
-        const users = getStoredUsers();
-        const uIdx = users.findIndex(u => u.id === students[idx].userId);
-        if (uIdx !== -1) {
-          users[uIdx] = { ...users[uIdx], firstName: userData.firstName, lastName: userData.lastName, email: userData.email };
-          if (userData.password) users[uIdx].passwordHash = userData.password;
-          saveUsers(users);
-        }
-      }
-      return { success: true, credentials };
-    }
-
-    const { error: studentError } = await supabase.from('students').update({
-      admission_number: studentData.admissionNumber,
-      class_id: studentData.classId,
-      status: studentData.status
-    }).eq('id', id);
-    if (studentError) throw studentError;
-
-    return { success: true, credentials };
-  },
-
-  deleteStudent: async (id: string) => {
-    if (!isConfigured) {
-      const students = getStoredStudents();
-      const s = students.find(item => item.id === id);
-      saveStudents(students.filter(item => item.id !== id));
-      if (s) {
-        const users = getStoredUsers();
-        saveUsers(users.filter(u => u.id !== s.userId));
-      }
-      return;
-    }
-    const { error } = await supabase.from('students').delete().eq('id', id);
-    if (error) throw error;
-  },
-
-  deleteStudentsBulk: async (ids: string[]) => {
-    if (!isConfigured) {
-      for (const id of ids) await adminService.deleteStudent(id);
-      return;
-    }
-    const { error } = await supabase.from('students').delete().in('id', ids);
-    if (error) throw error;
-  },
-
-  moveStudentToClass: async (studentId: string, newClassId: string) => {
-    if (!isConfigured) {
-      const students = getStoredStudents();
-      const idx = students.findIndex(s => s.id === studentId);
-      if (idx !== -1) {
-        students[idx].classId = newClassId;
-        saveStudents(students);
-      }
-      return;
-    }
-    const { error } = await supabase.from('students').update({ class_id: newClassId }).eq('id', studentId);
-    if (error) throw error;
-  },
-
-  // Staff Management
-  getStaff: async () => {
-    if (!isConfigured) return getStoredUsers().filter(u => u.role !== 'student');
-    const { data, error } = await supabase.from('profiles').select('*').neq('role', 'student');
-    if (error) throw error;
-    return data;
-  },
-
-  getTeachers: async () => {
-    if (!isConfigured) {
-      const teachers = getStoredTeachers();
-      const users = getStoredUsers();
-      const links = getStoredTeacherClasses();
-      const classes = getStoredClasses();
-      const subjects = getStoredSubjects();
-
-      return teachers.map(t => {
-        const user = users.find(u => u.id === t.userId);
-        const tLinks = links.filter(l => l.teacherId === t.id);
-        return {
-          ...t,
-          user,
-          assignments: tLinks.map(l => ({
-            id: l.id,
-            className: classes.find(c => c.id === l.classId)?.name,
-            subjectName: subjects.find(s => s.id === l.subjectId)?.name
-          }))
-        };
-      });
-    }
-    const { data, error } = await supabase.from('teachers').select(`
-      *, 
-      profiles:user_id (*), 
-      class_subject_teachers(
-        id, 
-        classes:class_id(name), 
-        subjects:subject_id(name)
-      )
-    `);
-    if (error) throw error;
-    return data.map(mapTeacherFromDb);
-  },
-
-  addTeacher: async (data: any, setIgnoreAuthEvents: (ignore: boolean) => void) => {
-    const password = data.password || 'NextLearn123';
-    if (!isConfigured) {
-      const users = getStoredUsers();
-      const newUser = {
-        id: 'u_t_' + Math.random().toString(36).substr(2, 9),
-        email: data.email,
-        firstName: data.firstName,
-        lastName: data.lastName,
-        role: 'teacher',
-        passwordHash: password,
-        themePreference: 'light',
-        isActive: true,
-        createdAt: new Date().toISOString()
-      };
-      saveUsers([...users, newUser]);
-
-      const teachers = getStoredTeachers();
-      const newTeacher = {
-        id: 't_' + Math.random().toString(36).substr(2, 9),
-        userId: newUser.id,
-        employeeId: 'EMP' + Math.floor(1000 + Math.random() * 9000),
-        specialization: data.specialization,
-        status: 'active'
-      };
-      saveTeachers([...teachers, newTeacher]);
-
-      return { teacher: newTeacher, credentials: { email: data.email, password } };
-    }
-
-    setIgnoreAuthEvents(true);
-    const { data: authData, error: authError } = await supabase.auth.signUp({
-      email: data.email,
-      password,
-      options: { data: { first_name: data.firstName, last_name: data.lastName, role: 'teacher' } }
-    });
-    if (authError) {
-      setIgnoreAuthEvents(false);
-      throw authError;
-    }
-
-    // Manually create profile to ensure FK constraints are met immediately
-    await supabase.from('profiles').upsert({
-      id: authData.user?.id,
-      email: data.email,
-      first_name: data.firstName,
-      last_name: data.lastName,
-      role: 'teacher'
-    });
-
-    const { data: teacher, error: teacherError } = await supabase.from('teachers').insert({
-      user_id: authData.user?.id,
-      employee_id: 'EMP' + Math.floor(1000 + Math.random() * 9000),
-      specialization: data.specialization,
-      status: 'active'
-    }).select().single();
-
-    setIgnoreAuthEvents(false);
-    if (teacherError) throw teacherError;
-
-    return { teacher, credentials: { email: data.email, password } };
-  },
-
-  deleteTeacher: async (id: string) => {
-    if (!isConfigured) {
-      const teachers = getStoredTeachers();
-      const t = teachers.find(item => item.id === id);
-      saveTeachers(teachers.filter(item => item.id !== id));
-      if (t) {
-        const users = getStoredUsers();
-        // Fix: Changed 's.userId' to 't.userId' to resolve undefined reference
-        saveUsers(users.filter(u => u.id !== t.userId));
-      }
-      return;
-    }
-    const { error } = await supabase.from('teachers').delete().eq('id', id);
-    if (error) throw error;
-  },
-
-  // Class Management
   getClasses: async () => {
-    if (!isConfigured) {
-      const classes = getStoredClasses();
-      const students = getStoredStudents();
-      const links = getStoredTeacherClasses();
-      const teachers = getStoredTeachers();
-      const users = getStoredUsers();
-      const subjects = getStoredSubjects();
+    const classesSnap = await getDocs(collection(db, "classes"));
+    const classes = classesSnap.docs.map(d => ({ id: d.id, ...d.data() }));
+    
+    const enriched = await Promise.all(classes.map(async (c: any) => {
+      const studentsQuery = query(collection(db, "students"), where("classId", "==", c.id));
+      const teachersQuery = query(collection(db, "teacher_classes"), where("classId", "==", c.id));
+      
+      const [sSnap, tSnap] = await Promise.all([
+        getDocs(studentsQuery),
+        getDocs(teachersQuery)
+      ]);
 
-      return classes.map(c => ({
+      return {
         ...c,
-        studentCount: students.filter(s => s.classId === c.id).length,
-        teachers: links.filter(l => l.classId === c.id).map(l => {
-          const t = teachers.find(item => item.id === l.teacherId);
-          const u = users.find(user => user.id === t?.userId);
-          const s = subjects.find(sub => sub.id === l.subjectId);
-          return {
-            id: l.id,
-            name: u ? `${u.firstName} ${u.lastName}` : 'Staff Member',
-            subject: s?.name || 'General'
-          };
-        })
-      }));
-    }
-    const { data, error } = await supabase.from('classes').select(`
-      *, 
-      class_subject_teachers(
-        id, 
-        teachers:teacher_id(profiles:user_id(first_name, last_name)), 
-        subjects:subject_id(name)
-      ), 
-      students(count)
-    `);
-    if (error) throw error;
-    return data.map(mapClassFromDb);
-  },
+        studentCount: sSnap.size,
+        teachers: tSnap.docs.map(d => d.data())
+      };
+    }));
 
-  getClassById: async (id: string) => {
-    if (!isConfigured) return getStoredClasses().find(c => c.id === id);
-    const { data, error } = await supabase.from('classes').select('*').eq('id', id).single();
-    if (error) throw error;
-    return { ...data, gradeLevel: data.grade_level, classCode: data.class_code };
+    return enriched;
   },
 
   createClass: async (data: any) => {
-    if (!isConfigured) {
-      const classes = getStoredClasses();
-      const newClass = {
-        id: 'c_' + Math.random().toString(36).substr(2, 9),
-        name: data.name,
-        gradeLevel: data.gradeLevel,
-        section: data.section,
-        classCode: Math.random().toString(36).substr(2, 6).toUpperCase()
-      };
-      saveClasses([...classes, newClass]);
-      return newClass;
-    }
-    const { data: cls, error } = await supabase.from('classes').insert({
-      name: data.name,
-      grade_level: data.gradeLevel,
-      section: data.section,
-      class_code: Math.random().toString(36).substr(2, 6).toUpperCase()
-    }).select().single();
-    if (error) throw error;
-    return cls;
-  },
-
-  updateClass: async (id: string, data: any) => {
-    if (!isConfigured) {
-      const classes = getStoredClasses();
-      const idx = classes.findIndex(c => c.id === id);
-      if (idx !== -1) {
-        classes[idx] = { ...classes[idx], ...data };
-        saveClasses(classes);
-      }
-      return;
-    }
-    const { error } = await supabase.from('classes').update({
-      name: data.name,
-      grade_level: data.gradeLevel,
-      section: data.section
-    }).eq('id', id);
-    if (error) throw error;
+    const classId = "c_" + Math.random().toString(36).substr(2, 9);
+    const newClass = {
+      ...data,
+      id: classId,
+      classCode: Math.random().toString(36).substr(2, 6).toUpperCase(),
+      createdAt: serverTimestamp()
+    };
+    await setDoc(doc(db, "classes", classId), newClass);
+    return newClass;
   },
 
   deleteClass: async (id: string) => {
-    if (!isConfigured) {
-      const classes = getStoredClasses();
-      saveClasses(classes.filter(c => c.id !== id));
-      return;
-    }
-    const { error } = await supabase.from('classes').delete().eq('id', id);
-    if (error) throw error;
+    await deleteDoc(doc(db, "classes", id));
   },
 
-  // Faculty Assignments & Subjects
-  createSubject: async (name: string) => {
-    if (!isConfigured) {
-      const subjects = getStoredSubjects();
-      const newSub = { id: 'sub_' + Math.random().toString(36).substr(2, 9), name, code: name.slice(0,3).toUpperCase() + '101' };
-      saveSubjects([...subjects, newSub]);
-      return newSub;
+  getTeachers: async () => {
+    const teachersSnap = await getDocs(collection(db, "teachers"));
+    const teachers = teachersSnap.docs.map(d => ({ id: d.id, ...d.data() }));
+    
+    return Promise.all(teachers.map(async (t: any) => {
+      const uSnap = await getDoc(doc(db, "users", t.userId));
+      return { ...t, user: uSnap.exists() ? uSnap.data() : null };
+    }));
+  },
+
+  getStaffMembers: async () => {
+    const q = query(collection(db, "users"), where("role", "!=", "student"));
+    const snap = await getDocs(q);
+    const staff = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+
+    return Promise.all(staff.map(async (member: any) => {
+      if (member.role === 'teacher') {
+        const tq = query(collection(db, "teachers"), where("userId", "==", member.id));
+        const tSnap = await getDocs(tq);
+        if (!tSnap.empty) {
+          return { ...member, teacherData: { id: tSnap.docs[0].id, ...tSnap.docs[0].data() } };
+        }
+      }
+      return member;
+    }));
+  },
+
+  getStaff: async () => {
+    const q = query(collection(db, "users"), where("role", "!=", "student"));
+    const snap = await getDocs(q);
+    return snap.docs.map(d => ({ id: d.id, ...d.data() }));
+  },
+
+  deleteStudent: async (id: string) => {
+    const sRef = doc(db, "students", id);
+    const sSnap = await getDoc(sRef);
+    if (!sSnap.exists()) return;
+
+    const { userId } = sSnap.data();
+    const batch = writeBatch(db);
+    
+    // 1. Delete specialized profile
+    batch.delete(sRef);
+    // 2. Delete base authentication record
+    batch.delete(doc(db, "users", userId));
+    // 3. Delete financial ledger entry
+    batch.delete(doc(db, "student_fees", id));
+    
+    await batch.commit();
+    await financeService.syncAllStudentFees();
+  },
+
+  deleteStaffMember: async (userId: string) => {
+    const uRef = doc(db, "users", userId);
+    const uSnap = await getDoc(uRef);
+    if (!uSnap.exists()) return;
+
+    const data = uSnap.data();
+    const batch = writeBatch(db);
+
+    // 1. Delete Specialized Records (Teacher, etc.)
+    if (data.role === 'teacher') {
+      const tq = query(collection(db, "teachers"), where("userId", "==", userId));
+      const tSnap = await getDocs(tq);
+      tSnap.forEach(tDoc => batch.delete(tDoc.ref));
+
+      // Remove Class Associations
+      const tcq = query(collection(db, "teacher_classes"), where("teacherId", "==", userId));
+      const tcSnap = await getDocs(tcq);
+      tcSnap.forEach(tcDoc => batch.delete(tcDoc.ref));
     }
-    const { data, error } = await supabase.from('subjects').insert({ name, code: name.slice(0,3).toUpperCase() + '101' }).select().single();
-    if (error) throw error;
-    return data;
+
+    // 2. Delete Base User Profile
+    batch.delete(uRef);
+    
+    await batch.commit();
+  },
+
+  deleteStudentsBulk: async (ids: string[]) => {
+    const batch = writeBatch(db);
+    for (const id of ids) {
+      const sRef = doc(db, "students", id);
+      const sSnap = await getDoc(sRef);
+      if (sSnap.exists()) {
+        const { userId } = sSnap.data();
+        batch.delete(sRef);
+        batch.delete(doc(db, "users", userId));
+        batch.delete(doc(db, "student_fees", id));
+      }
+    }
+    await batch.commit();
+  },
+
+  updateStudent: async (id: string, studentData: any, userData: any) => {
+    const sRef = doc(db, "students", id);
+    const sSnap = await getDoc(sRef);
+    if (!sSnap.exists()) throw new Error("Student not found");
+    
+    const { userId } = sSnap.data();
+    await updateDoc(sRef, studentData);
+    if (userData) {
+      await updateDoc(doc(db, "users", userId), userData);
+    }
+    
+    await financeService.syncAllStudentFees();
+    return { credentials: userData.password ? { email: userData.email, password: userData.password } : undefined };
+  },
+
+  addStudent: async (studentData: any, userData: any) => {
+    const userId = "u_" + Math.random().toString(36).substr(2, 9);
+    const studentId = "s_" + Math.random().toString(36).substr(2, 9);
+    const password = userData.password || "NextLearn" + Math.floor(1000 + Math.random() * 9000);
+    
+    await setDoc(doc(db, "users", userId), {
+      ...userData,
+      id: userId,
+      password, // Explicitly store for admin view in this demo
+      role: 'student',
+      isActive: true,
+      createdAt: serverTimestamp(),
+      themePreference: 'light'
+    });
+
+    await setDoc(doc(db, "students", studentId), {
+      ...studentData,
+      id: studentId,
+      userId,
+      createdAt: serverTimestamp()
+    });
+
+    await financeService.syncAllStudentFees();
+    return { credentials: { email: userData.email, password } };
+  },
+
+  addStaff: async (data: any) => {
+    const userId = "u_" + Math.random().toString(36).substr(2, 9);
+    const password = data.password || data.role.charAt(0).toUpperCase() + data.role.slice(1) + Math.floor(1000 + Math.random() * 9000);
+
+    await setDoc(doc(db, "users", userId), {
+      id: userId,
+      firstName: data.firstName,
+      lastName: data.lastName,
+      email: data.email,
+      password, // Explicitly store for admin view in this demo
+      role: data.role as UserRole,
+      isActive: true,
+      createdAt: serverTimestamp(),
+      themePreference: 'light'
+    });
+
+    if (data.role === 'teacher') {
+      const teacherId = "t_" + Math.random().toString(36).substr(2, 9);
+      await setDoc(doc(db, "teachers", teacherId), {
+        id: teacherId,
+        userId,
+        specialization: data.specialization || 'General',
+        status: 'active',
+        createdAt: serverTimestamp()
+      });
+    }
+
+    return { credentials: { email: data.email, password } };
+  },
+
+  updateStaff: async (userId: string, data: any) => {
+    const uRef = doc(db, "users", userId);
+    await updateDoc(uRef, {
+      firstName: data.firstName,
+      lastName: data.lastName,
+      email: data.email,
+      role: data.role,
+      updatedAt: serverTimestamp()
+    });
+
+    if (data.role === 'teacher') {
+      const tq = query(collection(db, "teachers"), where("userId", "==", userId));
+      const tSnap = await getDocs(tq);
+      if (!tSnap.empty) {
+        await updateDoc(doc(db, "teachers", tSnap.docs[0].id), {
+          specialization: data.specialization,
+          updatedAt: serverTimestamp()
+        });
+      }
+    }
+  },
+
+  resetUserPassword: async (userId: string) => {
+    const uRef = doc(db, "users", userId);
+    const uSnap = await getDoc(uRef);
+    if (!uSnap.exists()) throw new Error("User not found");
+    
+    const role = uSnap.data().role;
+    const newPassword = role.charAt(0).toUpperCase() + role.slice(1) + Math.floor(1000 + Math.random() * 9000);
+    
+    await updateDoc(uRef, { password: newPassword });
+    return { email: uSnap.data().email, password: newPassword };
+  },
+
+  updateUserPassword: async (userId: string, newPassword: string) => {
+    const uRef = doc(db, "users", userId);
+    await updateDoc(uRef, { password: newPassword });
+  },
+
+  updateClass: async (id: string, data: any) => {
+    await updateDoc(doc(db, "classes", id), data);
+  },
+
+  createSubject: async (name: string) => {
+    const id = "sub_" + Math.random().toString(36).substr(2, 9);
+    const sub = { id, name, code: name.toUpperCase().substr(0, 3) + Math.floor(100 + Math.random() * 900) };
+    await setDoc(doc(db, "subjects", id), sub);
+    return sub;
   },
 
   assignTeacherToClass: async (teacherId: string, classId: string, subjectId: string) => {
-    if (!isConfigured) {
-      const links = getStoredTeacherClasses();
-      const newLink = {
-        id: 'link_' + Math.random().toString(36).substr(2, 9),
-        teacherId,
-        classId,
-        subjectId
-      };
-      saveTeacherClasses([...links, newLink]);
-      return newLink;
-    }
-    const { data, error } = await supabase.from('class_subject_teachers').insert({
-      teacher_id: teacherId,
-      class_id: classId,
-      subject_id: subjectId
-    }).select().single();
-    if (error) throw error;
-    return data;
+    const id = `tc_${teacherId}_${classId}_${subjectId}`;
+    await setDoc(doc(db, "teacher_classes", id), {
+      id,
+      teacherId,
+      classId,
+      subjectId,
+      assignedAt: serverTimestamp()
+    });
   },
 
-  removeTeacherFromClass: async (linkId: string) => {
-    if (!isConfigured) {
-      const links = getStoredTeacherClasses();
-      saveTeacherClasses(links.filter(l => l.id !== linkId));
-      return;
-    }
-    const { error } = await supabase.from('class_subject_teachers').delete().eq('id', linkId);
-    if (error) throw error;
+  removeTeacherFromClass: async (id: string) => {
+    await deleteDoc(doc(db, "teacher_classes", id));
+  },
+
+  addTeacher: async (data: any) => {
+    const userId = "u_" + Math.random().toString(36).substr(2, 9);
+    const teacherId = "t_" + Math.random().toString(36).substr(2, 9);
+    const password = data.password || "Teacher" + Math.floor(1000 + Math.random() * 9000);
+
+    await setDoc(doc(db, "users", userId), {
+      firstName: data.firstName,
+      lastName: data.lastName,
+      email: data.email,
+      id: userId,
+      password,
+      role: 'teacher',
+      isActive: true,
+      createdAt: serverTimestamp(),
+      themePreference: 'light'
+    });
+
+    await setDoc(doc(db, "teachers", teacherId), {
+      id: teacherId,
+      userId,
+      specialization: data.specialization,
+      status: 'active',
+      createdAt: serverTimestamp()
+    });
+
+    return { credentials: { email: data.email, password } };
+  },
+
+  deleteTeacher: async (id: string) => {
+    await deleteDoc(doc(db, "teachers", id));
+  },
+
+  getClassById: async (id: string) => {
+    const snap = await getDoc(doc(db, "classes", id));
+    return snap.exists() ? { id: snap.id, ...snap.data() } : null;
+  },
+
+  getStudentsByClass: async (classId: string) => {
+    const q = query(collection(db, "students"), where("classId", "==", classId));
+    const snap = await getDocs(q);
+    return Promise.all(snap.docs.map(async (d) => {
+      const student = d.data();
+      const uSnap = await getDoc(doc(db, "users", student.userId));
+      return { ...student, id: d.id, user: uSnap.exists() ? uSnap.data() : null };
+    }));
+  },
+
+  moveStudentToClass: async (studentId: string, newClassId: string) => {
+    await updateDoc(doc(db, "students", studentId), { classId: newClassId });
+    await financeService.syncAllStudentFees();
   }
 };

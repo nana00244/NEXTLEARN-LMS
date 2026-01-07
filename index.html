@@ -2,8 +2,11 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>NextLearn LMS</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5.0, user-scalable=yes">
+    <meta name="mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="theme-color" content="#4f46e5">
+    <title>NextLearn LMS - Build bv3</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script>
       tailwind.config = {
@@ -19,90 +22,185 @@
     </script>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet">
     <style>
+      :root {
+        --primary: #4F46E5;
+        --primary-hover: #4338CA;
+        --white: #FFFFFF;
+        --bg-main: #F9FAFB;
+        --text-main: #111827;
+        --text-muted: #6B7280;
+        --border-color: #E5E7EB;
+        
+        --radius-sm: 0.375rem;
+        --radius-md: 0.5rem;
+        --radius-lg: 0.75rem;
+        --radius-xl: 1rem;
+        
+        --shadow-sm: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
+        --shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+        --transition: 200ms ease-in-out;
+      }
+
+      /* Unified Dark Mode Variable Overrides */
+      .dark-mode {
+        --white: #1F2937;
+        --bg-main: #111827;
+        --text-main: #F9FAFB;
+        --text-muted: #9CA3AF;
+        --border-color: #374151;
+      }
+
       body {
         font-family: 'Inter', sans-serif;
-      }
-      /* Custom scrollbar */
-      ::-webkit-scrollbar {
-        width: 8px;
-      }
-      ::-webkit-scrollbar-track {
-        background: transparent;
-      }
-      ::-webkit-scrollbar-thumb {
-        background: #cbd5e1;
-        border-radius: 4px;
-      }
-      .dark ::-webkit-scrollbar-thumb {
-        background: #475569;
+        background-color: var(--bg-main);
+        color: var(--text-main);
+        margin: 0;
+        padding: 0;
+        transition: background-color var(--transition), color var(--transition);
+        -webkit-font-smoothing: antialiased;
       }
 
-      /* Print Optimization Styles */
-      @media print {
-        @page {
-          size: A4;
-          margin: 0;
-        }
-        
-        html, body {
-          background: white !important;
-          color: black !important;
-          height: auto !important;
-        }
-
-        nav, aside, button, footer, .no-print, header, .sidebar-spacer, .modal-overlay {
-          display: none !important;
-        }
-
-        #root, main {
-          margin: 0 !important;
-          padding: 0 !important;
-          display: block !important;
-          width: 100% !important;
-        }
-
-        main {
-          margin-left: 0 !important;
-          display: flex !important;
-          justify-content: center !important;
-          padding-top: 2cm !important;
-        }
-
-        .receipt-card {
-          display: block !important;
-          border: 1px solid #e2e8f0 !important;
-          box-shadow: none !important;
-          margin: 0 auto !important;
-          width: 16cm !important;
-          background: white !important;
-          border-radius: 12px !important;
-          padding: 1.5cm !important;
-          -webkit-print-color-adjust: exact !important;
-          print-color-adjust: exact !important;
-        }
-
-        .dark .receipt-card * {
-          color: #0f172a !important;
-        }
+      /* Global Layout */
+      .app-container { display: flex; min-height: 100vh; }
+      .sidebar {
+        width: 280px;
+        background-color: var(--white);
+        border-right: 1px solid var(--border-color);
+        padding: 1.5rem;
+        position: fixed;
+        height: 100vh;
+        z-index: 50;
+        transition: transform var(--transition);
       }
+      .main-content { margin-left: 280px; flex: 1; min-width: 0; }
+      .top-nav {
+        background-color: var(--white);
+        border-bottom: 1px solid var(--border-color);
+        height: 64px;
+        padding: 0 2rem;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        position: sticky;
+        top: 0;
+        z-index: 40;
+      }
+      .page-container { padding: 2rem; max-width: 1400px; margin: 0 auto; }
+
+      /* Reverting to Professional bv3 Cards & Readability */
+      .card {
+        background-color: var(--white);
+        border: 1px solid var(--border-color);
+        border-radius: var(--radius-xl);
+        box-shadow: var(--shadow-sm);
+        overflow: hidden;
+        transition: background-color var(--transition), border-color var(--transition);
+      }
+      .card-header { padding: 1.25rem 1.5rem; border-bottom: 1px solid var(--border-color); font-weight: 700; color: var(--text-main); }
+      .card-body { padding: 1.5rem; color: var(--text-main); }
+
+      /* Form Elements Theme Compliance */
+      input, select, textarea {
+        background-color: var(--white);
+        color: var(--text-main);
+        border: 1px solid var(--border-color);
+        transition: all var(--transition);
+      }
+      input::placeholder { color: var(--text-muted); opacity: 0.7; }
+      
+      .btn {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        padding: 0.625rem 1.25rem;
+        border-radius: var(--radius-lg);
+        font-weight: 600;
+        font-size: 0.875rem;
+        cursor: pointer;
+        transition: all var(--transition);
+      }
+      .btn-primary { background: var(--primary); color: white; border: none; }
+      .btn-primary:hover { background: var(--primary-hover); transform: translateY(-1px); }
+      .btn-secondary { background: var(--white); color: var(--text-main); border: 1px solid var(--border-color); }
+      .btn-secondary:hover { background: var(--bg-main); border-color: var(--text-muted); }
+
+      .sidebar-link {
+        display: flex;
+        align-items: center;
+        gap: 0.75rem;
+        padding: 0.75rem 1rem;
+        border-radius: var(--radius-md);
+        color: var(--text-muted);
+        text-decoration: none;
+        font-weight: 500;
+        transition: all var(--transition);
+      }
+      .sidebar-link:hover { background: var(--bg-main); color: var(--text-main); }
+      .sidebar-link.active { background: var(--primary); color: white; }
+
+      .theme-toggle-btn {
+        width: 40px;
+        height: 40px;
+        border-radius: var(--radius-md);
+        border: 1px solid var(--border-color);
+        background: var(--white);
+        color: var(--text-main);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        cursor: pointer;
+        font-size: 1.1rem;
+        transition: all var(--transition);
+      }
+      .theme-toggle-btn:hover { background-color: var(--bg-main); }
+
+      .table { width: 100%; border-collapse: collapse; color: var(--text-main); }
+      .table th { background: var(--bg-main); padding: 1rem; text-align: left; font-size: 0.75rem; text-transform: uppercase; color: var(--text-muted); border-bottom: 1px solid var(--border-color); }
+      .table td { padding: 1rem; border-bottom: 1px solid var(--border-color); }
+
+      .stats-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 1.5rem; margin-bottom: 2rem; }
+      .stat-card { background: var(--white); padding: 1.5rem; border-radius: var(--radius-xl); border: 1px solid var(--border-color); display: flex; flex-direction: column; gap: 0.5rem; }
+      .stat-card-label { font-size: 0.75rem; color: var(--text-muted); font-weight: 600; text-transform: uppercase; }
+      .stat-card-value { font-size: 1.75rem; font-weight: 800; color: var(--text-main); }
+
+      /* Mobile Overrides */
+      @media (max-width: 768px) {
+        .sidebar { transform: translateX(-100%); }
+        .sidebar.mobile-open { transform: translateX(0); }
+        .main-content { margin-left: 0; }
+        .page-container { padding: 1rem; }
+      }
+
+      /* Receipt Window - Clean & Printable */
+      .receipt-window { 
+        max-width: 600px; 
+        margin: 2rem auto; 
+        background: white; 
+        color: #111827;
+        padding: 3rem; 
+        border-radius: 1.5rem; 
+        box-shadow: var(--shadow-md); 
+        border: 1px solid #e2e8f0; 
+      }
+      .dark-mode .receipt-window { background: #FFFFFF; color: #111827; } /* Receipts should stay light for printing logic */
     </style>
-  <script type="importmap">
-{
-  "imports": {
-    "react": "https://esm.sh/react@^19.2.3",
-    "react-dom/": "https://esm.sh/react-dom@^19.2.3/",
-    "react/": "https://esm.sh/react@^19.2.3/",
-    "react-router-dom": "https://esm.sh/react-router-dom@^7.11.0",
-    "@supabase/supabase-js": "https://esm.sh/@supabase/supabase-js@^2.89.0",
-    "vite": "https://esm.sh/vite@^7.3.0",
-    "@vitejs/plugin-react": "https://esm.sh/@vitejs/plugin-react@^5.1.2"
-  }
-}
-</script>
-</head>
-  <body class="bg-slate-50 text-slate-900 dark:bg-slate-950 dark:text-slate-50 transition-colors duration-200 antialiased">
+    <script type="importmap">
+    {
+      "imports": {
+        "react": "https://esm.sh/react@^19.2.3",
+        "react-dom/": "https://esm.sh/react-dom@^19.2.3/",
+        "react/": "https://esm.sh/react@^19.2.3/",
+        "react-router-dom": "https://esm.sh/react-router-dom@^7.11.0",
+        "firebase/": "https://esm.sh/firebase@^12.7.0/",
+        "@vitejs/plugin-react": "https://esm.sh/@vitejs/plugin-react@^5.1.2",
+        "vite": "https://esm.sh/vite@^7.3.0"
+      }
+    }
+    </script>
+  </head>
+  <body>
     <div id="root"></div>
     <script type="module" src="/index.tsx"></script>
   </body>

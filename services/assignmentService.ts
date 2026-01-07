@@ -1,147 +1,142 @@
-
 import { 
-  getStoredAssignments, saveAssignments, 
-  getStoredSubmissions, saveSubmissions,
-  getStoredLessons, getStoredClasses,
-  getStoredSubjects, getStoredUsers,
-  getStoredStudents
-} from './mockDb';
-import { Assignment, Submission, Lesson } from '../types';
+  collection, doc, getDocs, getDoc, setDoc, updateDoc, 
+  deleteDoc, query, where, orderBy, serverTimestamp 
+} from "firebase/firestore";
+import { db } from "../lib/firebase";
+import { Assignment, Submission } from '../types';
 
 export const assignmentService = {
-  // Teacher Actions
-  getTeacherAssignments: async (teacherId: string) => {
-    return getStoredAssignments().filter(a => a.teacherId === teacherId);
-  },
+  getStudentStream: async (userId: string) => {
+    // 1. Get student profile to find classId
+    const q = query(collection(db, "students"), where("userId", "==", userId));
+    const studentSnap = await getDocs(q);
+    if (studentSnap.empty) return [];
+    
+    const student = studentSnap.docs[0].data();
+    const classId = student.classId;
 
-  getAssignmentById: async (id: string) => {
-    return getStoredAssignments().find(a => a.id === id);
-  },
+    // 2. Query lessons and assignments for this class
+    const lessonsQ = query(collection(db, "lessons"), where("classId", "==", classId), orderBy("postedDate", "desc"));
+    const assignmentsQ = query(collection(db, "assignments"), where("classId", "==", classId), orderBy("createdAt", "desc"));
 
-  createAssignment: async (data: Partial<Assignment>) => {
-    const assignments = getStoredAssignments();
-    const newAssignment = {
-      ...data,
-      id: Math.random().toString(36).substr(2, 9),
-      createdAt: new Date().toISOString(),
-      type: data.type || 'assignment',
-      attachments: data.attachments || [],
-      status: data.status || 'published'
-    } as Assignment;
-    saveAssignments([...assignments, newAssignment]);
-    return newAssignment;
-  },
+    const [lSnap, aSnap] = await Promise.all([getDocs(lessonsQ), getDocs(assignmentsQ)]);
 
-  updateAssignment: async (id: string, updates: Partial<Assignment>) => {
-    const assignments = getStoredAssignments();
-    const idx = assignments.findIndex(a => a.id === id);
-    if (idx === -1) throw new Error("Assignment not found");
-    assignments[idx] = { ...assignments[idx], ...updates };
-    saveAssignments(assignments);
-    return assignments[idx];
-  },
-
-  deleteAssignment: async (id: string) => {
-    const assignments = getStoredAssignments();
-    saveAssignments(assignments.filter(a => a.id !== id));
-  },
-
-  // Student Actions
-  getStudentStream: async (studentUserId: string) => {
-    const students = getStoredStudents();
-    const student = students.find(s => s.userId === studentUserId);
-    if (!student || !student.classId) return [];
-
-    const lessons = getStoredLessons().filter(l => l.classId === student.classId);
-    const assignments = getStoredAssignments().filter(a => a.classId === student.classId);
-    const users = getStoredUsers();
-    const subjects = getStoredSubjects();
-
-    const merged = [
-      ...lessons.map(l => ({ ...l, type: 'lesson' as const })),
-      ...assignments.map(a => ({ ...a, type: 'assignment' as const }))
+    const items = [
+      ...lSnap.docs.map(d => ({ ...d.data(), id: d.id, type: 'lesson' })),
+      ...aSnap.docs.map(d => ({ ...d.data(), id: d.id, type: 'assignment' }))
     ];
 
-    return merged.sort((a, b) => {
-      const dateA = a.type === 'lesson' ? a.postedDate : a.createdAt;
-      const dateB = b.type === 'lesson' ? b.postedDate : b.createdAt;
-      return new Date(dateB).getTime() - new Date(dateA).getTime();
-    }).map(item => ({
+    // Enrich with teacher info
+    return Promise.all(items.map(async (item: any) => {
+      const tSnap = await getDoc(doc(db, "users", item.teacherId));
+      const sSnap = item.subjectId ? await getDoc(doc(db, "subjects", item.subjectId)) : null;
+      return {
         ...item,
-        teacher: users.find(u => u.id === item.teacherId),
-        subject: subjects.find(s => s.id === item.subjectId)
+        teacher: tSnap.exists() ? tSnap.data() : { firstName: 'Teacher', lastName: '' },
+        subject: sSnap?.exists() ? sSnap.data() : { name: 'General' }
+      };
     }));
   },
 
-  getStudentAssignments: async (studentUserId: string) => {
-    const students = getStoredStudents();
-    const student = students.find(s => s.userId === studentUserId);
-    if (!student || !student.classId) return [];
-
-    const assignments = getStoredAssignments().filter(a => a.classId === student.classId);
-    const submissions = getStoredSubmissions().filter(s => s.studentId === student.id);
-
-    return assignments.map(a => {
-        const sub = submissions.find(s => s.assignmentId === a.id);
-        return {
-            ...a,
-            submission: sub,
-            status: sub ? (sub.status === 'graded' ? 'graded' : 'completed') : (new Date(a.dueDate) < new Date() ? 'missing' : 'assigned')
-        };
-    });
-  },
-
-  getAssignmentDetails: async (id: string, studentUserId: string) => {
-    const assignments = getStoredAssignments();
-    const assignment = assignments.find(a => a.id === id);
-    if (!assignment) return null;
-
-    const students = getStoredStudents();
-    const student = students.find(s => s.userId === studentUserId);
-    
-    // Safety check: ensure student is actually in the class the assignment belongs to
-    if (student?.classId !== assignment.classId) {
-      throw new Error("Access Denied: Assignment is not for your class.");
-    }
-
-    const submissions = getStoredSubmissions();
-    const submission = submissions.find(s => s.assignmentId === id && s.studentId === student?.id);
-
-    return { ...assignment, submission };
-  },
-
-  submitAssignment: async (assignmentId: string, studentUserId: string, data: { text?: string, files?: any[] }) => {
-    const students = getStoredStudents();
-    const student = students.find(s => s.userId === studentUserId);
-    if (!student) throw new Error("Student record not found");
-
-    const assignments = getStoredAssignments();
-    const assignment = assignments.find(a => a.id === assignmentId);
-    if (!assignment) throw new Error("Assignment not found");
-
-    const submissions = getStoredSubmissions();
-    const existing = submissions.findIndex(s => s.assignmentId === assignmentId && s.studentId === student.id);
-
-    const isLate = new Date() > new Date(`${assignment.dueDate}T${assignment.dueTime || '23:59:59'}`);
-
-    const newSubmission: Submission = {
-        id: Math.random().toString(36).substr(2, 9),
-        assignmentId,
-        studentId: student.id,
-        submittedDate: new Date().toISOString(),
-        status: 'submitted',
-        attachments: data.files || [],
-        studentText: data.text,
-        isLate
+  createAssignment: async (data: Partial<Assignment>) => {
+    const id = "a_" + Math.random().toString(36).substr(2, 9);
+    const assignment = {
+      ...data,
+      id,
+      createdAt: new Date().toISOString(),
+      status: data.status || 'published'
     };
+    await setDoc(doc(db, "assignments", id), assignment);
+    return assignment;
+  },
 
-    if (existing !== -1) {
-        submissions[existing] = newSubmission;
-        saveSubmissions(submissions);
-    } else {
-        saveSubmissions([...submissions, newSubmission]);
-    }
+  getTeacherAssignments: async (teacherId: string) => {
+    const q = query(collection(db, "assignments"), where("teacherId", "==", teacherId));
+    const snap = await getDocs(q);
+    return snap.docs.map(d => ({ id: d.id, ...d.data() })) as Assignment[];
+  },
 
-    return newSubmission;
+  // Fix: Added getStudentAssignments method
+  getStudentAssignments: async (userId: string) => {
+    const sq = query(collection(db, "students"), where("userId", "==", userId));
+    const sSnap = await getDocs(sq);
+    if (sSnap.empty) return [];
+    const student = sSnap.docs[0].data();
+    const studentId = sSnap.docs[0].id;
+
+    const aq = query(collection(db, "assignments"), where("classId", "==", student.classId));
+    const aSnap = await getDocs(aq);
+    
+    return Promise.all(aSnap.docs.map(async (d) => {
+      const assignment = d.data();
+      const subQ = query(collection(db, "submissions"), where("assignmentId", "==", d.id), where("studentId", "==", studentId));
+      const subSnap = await getDocs(subQ);
+      
+      let status = 'assigned';
+      if (!subSnap.empty) {
+        const sub = subSnap.docs[0].data();
+        status = sub.status === 'graded' || sub.status === 'returned' ? 'graded' : 'completed';
+      } else if (new Date(assignment.dueDate) < new Date()) {
+        status = 'missing';
+      }
+
+      return { ...assignment, id: d.id, status };
+    }));
+  },
+
+  // Fix: Added getAssignmentDetails method
+  getAssignmentDetails: async (assignmentId: string, userId: string) => {
+    const [aSnap, sq] = await Promise.all([
+      getDoc(doc(db, "assignments", assignmentId)),
+      getDocs(query(collection(db, "students"), where("userId", "==", userId)))
+    ]);
+    
+    if (!aSnap.exists() || sq.empty) return null;
+    const assignment = aSnap.data();
+    const studentId = sq.docs[0].id;
+
+    const subQ = query(collection(db, "submissions"), where("assignmentId", "==", assignmentId), where("studentId", "==", studentId));
+    const subSnap = await getDocs(subQ);
+    
+    return {
+      ...assignment,
+      id: aSnap.id,
+      submission: subSnap.empty ? null : subSnap.docs[0].data()
+    };
+  },
+
+  // Fix: Added submitAssignment method
+  submitAssignment: async (assignmentId: string, userId: string, data: any) => {
+    const sq = query(collection(db, "students"), where("userId", "==", userId));
+    const sSnap = await getDocs(sq);
+    if (sSnap.empty) throw new Error("Student not found");
+    const studentId = sSnap.docs[0].id;
+
+    const aSnap = await getDoc(doc(db, "assignments", assignmentId));
+    const assignment = aSnap.data();
+    
+    const id = `sub_${studentId}_${assignmentId}`;
+    const submission = {
+      id,
+      assignmentId,
+      studentId,
+      submittedDate: new Date().toISOString(),
+      studentText: data.text,
+      attachments: data.files || [],
+      isLate: assignment?.dueDate ? (new Date() > new Date(assignment.dueDate)) : false,
+      status: 'submitted'
+    };
+    await setDoc(doc(db, "submissions", id), submission);
+    return submission;
+  },
+
+  // Fix: Added updateAssignment method
+  updateAssignment: async (id: string, data: Partial<Assignment>) => {
+    await updateDoc(doc(db, "assignments", id), data);
+  },
+
+  // Fix: Added deleteAssignment method
+  deleteAssignment: async (id: string) => {
+    await deleteDoc(doc(db, "assignments", id));
   }
 };

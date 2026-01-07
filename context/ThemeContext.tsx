@@ -1,39 +1,62 @@
-
 import React, { createContext, useContext, useEffect, useState } from 'react';
-import { STORAGE_KEYS } from '../constants';
-
-type Theme = 'light' | 'dark';
 
 interface ThemeContextType {
-  theme: Theme;
+  isDarkMode: boolean;
   toggleTheme: () => void;
+  setIsDarkMode: (val: boolean) => void;
 }
 
 const ThemeContext = createContext<ThemeContextType | undefined>(undefined);
 
 export const ThemeProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const [theme, setTheme] = useState<Theme>(() => {
-    const saved = localStorage.getItem(STORAGE_KEYS.THEME_PREF);
-    if (saved === 'dark' || saved === 'light') return saved;
-    return window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
-  });
+  const [isDarkMode, setIsDarkMode] = useState(false);
+  const [isLoading, setIsLoading] = useState(true);
 
+  // Load theme preference on mount
   useEffect(() => {
-    const root = window.document.documentElement;
-    if (theme === 'dark') {
-      root.classList.add('dark');
-    } else {
-      root.classList.remove('dark');
+    try {
+      const savedTheme = localStorage.getItem('app-theme');
+      if (savedTheme === 'dark') {
+        setIsDarkMode(true);
+        document.documentElement.classList.add('dark-mode');
+        document.documentElement.classList.add('dark');
+        document.body.classList.add('dark-mode');
+      } else {
+        setIsDarkMode(false);
+        document.documentElement.classList.remove('dark-mode');
+        document.documentElement.classList.remove('dark');
+        document.body.classList.remove('dark-mode');
+      }
+    } catch (error) {
+      console.error('Error loading theme:', error);
+    } finally {
+      setIsLoading(false);
     }
-    localStorage.setItem(STORAGE_KEYS.THEME_PREF, theme);
-  }, [theme]);
+  }, []);
+
+  // Apply theme changes to the DOM
+  useEffect(() => {
+    if (isLoading) return;
+    
+    if (isDarkMode) {
+      document.documentElement.classList.add('dark-mode');
+      document.documentElement.classList.add('dark');
+      document.body.classList.add('dark-mode');
+      localStorage.setItem('app-theme', 'dark');
+    } else {
+      document.documentElement.classList.remove('dark-mode');
+      document.documentElement.classList.remove('dark');
+      document.body.classList.remove('dark-mode');
+      localStorage.setItem('app-theme', 'light');
+    }
+  }, [isDarkMode, isLoading]);
 
   const toggleTheme = () => {
-    setTheme(prev => (prev === 'light' ? 'dark' : 'light'));
+    setIsDarkMode(prev => !prev);
   };
 
   return (
-    <ThemeContext.Provider value={{ theme, toggleTheme }}>
+    <ThemeContext.Provider value={{ isDarkMode, toggleTheme, setIsDarkMode }}>
       {children}
     </ThemeContext.Provider>
   );

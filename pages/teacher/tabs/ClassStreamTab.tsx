@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect, useRef } from 'react';
 import { teacherService } from '../../../services/teacherService';
 import { assignmentService } from '../../../services/assignmentService';
@@ -45,15 +44,21 @@ export const ClassStreamTab: React.FC<{ classId: string; subjectId: string }> = 
 
     // Sync: Merge and update stream
     const classAssignments = uData.filter(a => a.classId === classId);
+    
+    // Fix: Using type casting to safely handle mixed stream items during sorting and property access
     const streamItems = [
       ...aData.map(a => ({ ...a, streamType: 'announcement' })),
       ...classAssignments.map(a => ({ 
         ...a, 
         streamType: 'assignment_card', 
         content: `posted a new assignment: ${a.title}`,
-        postedDate: a.createdAt 
+        postedDate: (a as any).createdAt 
       }))
-    ].sort((a, b) => new Date(b.postedDate || b.createdAt).getTime() - new Date(a.postedDate || a.createdAt).getTime());
+    ].sort((a: any, b: any) => {
+      const dateA = new Date(a.postedDate || a.createdAt).getTime();
+      const dateB = new Date(b.postedDate || b.createdAt).getTime();
+      return dateB - dateA;
+    });
 
     setAnnouncements(streamItems as any);
     setUpcoming(filteredUpcoming);

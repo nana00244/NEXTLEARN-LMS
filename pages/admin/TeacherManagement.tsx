@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect } from 'react';
 import { adminService } from '../../services/adminService';
 import { useAuth } from '../../context/AuthContext';
@@ -7,7 +6,7 @@ import { Alert } from '../../components/UI/Alert';
 import { getStoredSubjects } from '../../services/mockDb';
 
 export const TeacherManagement: React.FC = () => {
-  const { setIgnoreAuthEvents, user: authUser } = useAuth();
+  const { user: authUser } = useAuth();
   const [teachers, setTeachers] = useState<any[]>([]);
   const [classes, setClasses] = useState<any[]>([]);
   const [subjects, setSubjects] = useState<any[]>([]);
@@ -25,7 +24,6 @@ export const TeacherManagement: React.FC = () => {
   const fetchData = async () => {
     setLoading(true);
     try {
-      console.log("[TeacherManager] Syncing faculty data...");
       const [tData, cData, sData] = await Promise.all([
         adminService.getTeachers(),
         adminService.getClasses(),
@@ -36,7 +34,10 @@ export const TeacherManagement: React.FC = () => {
       setSubjects(sData);
     } catch (err: any) {
       console.error("[TeacherManager] Sync failed:", err);
-      setAlert({ type: 'error', message: err.message || "Identity Sync Error: Ensure RLS is configured for profiles/teachers tables." });
+      setAlert({ 
+        type: 'error', 
+        message: err.code === 'permission-denied' ? "Security Error: Database permissions are restricted." : err.message || "Identity Sync Error." 
+      });
     } finally {
       setLoading(false);
     }
@@ -49,14 +50,18 @@ export const TeacherManagement: React.FC = () => {
     setLoading(true);
     setAlert(null);
     try {
-      const result = await adminService.addTeacher(form, setIgnoreAuthEvents);
+      const result = await adminService.addTeacher(form);
       setShowCreds(result.credentials);
       setShowAdd(false);
       setForm({ firstName: '', lastName: '', email: '', password: '', specialization: '' });
       setTimeout(() => fetchData(), 1000);
     } catch (err: any) {
-      console.error("[TeacherManager] Error during creation:", err);
-      setAlert({ type: 'error', message: err.message || "Failed to create teacher account." });
+      console.error("[TeacherManager] Error:", err);
+      const isPermissionError = err.code === 'permission-denied' || err.message?.includes('permissions');
+      setAlert({ 
+        type: 'error', 
+        message: isPermissionError ? "Failed: Missing permissions to write to 'users' and 'teachers'. Apply the fix below." : "Failed to create teacher account." 
+      });
       setLoading(false);
     }
   };
@@ -96,8 +101,6 @@ export const TeacherManagement: React.FC = () => {
     <p className="text-slate-400 font-medium">Synchronizing Faculty List...</p>
   </div>;
 
-  const isSyncError = alert?.message.includes('Sync Timeout') || alert?.message.includes('SETUP_REQUIRED');
-
   return (
     <div className="space-y-8">
       <header className="flex justify-between items-center">
@@ -120,43 +123,29 @@ export const TeacherManagement: React.FC = () => {
         <div className="space-y-4">
           <Alert type={alert.type} message={alert.message} onClose={() => setAlert(null)} />
           
-          {alert.type === 'error' && (isSyncError || alert.message.includes('row-level security')) && (
+          {alert.type === 'error' && (alert.message.includes('permissions') || alert.message.includes('Security')) && (
             <div className="p-8 bg-slate-900 text-slate-300 rounded-[2.5rem] border border-slate-800 animate-in slide-in-from-top-4 shadow-2xl">
                 <div className="flex justify-between items-start mb-6">
-                   <p className="text-indigo-400 font-black uppercase tracking-widest text-xs"># CRITICAL: Database Sync Fix</p>
+                   <p className="text-indigo-400 font-black uppercase tracking-widest text-xs"># CRITICAL: FIREBASE CONFIGURATION FIX</p>
                 </div>
-                <p className="mb-4 text-sm leading-relaxed">The "Sync Timeout" occurs because your database is missing the automation to create profiles when users sign up. Run this <strong>SQL Script</strong> in your Supabase SQL Editor to fix it:</p>
+                <p className="mb-4 text-sm leading-relaxed">Firebase Firestore is blocking the creation of new staff accounts. Run these rules in your Firebase Console:</p>
                 
-                <div className="bg-black/60 p-6 rounded-2xl border border-slate-700 font-mono text-[10px] overflow-x-auto whitespace-pre mb-6">
-{`/* 1. Create the Automation Function */
-CREATE OR REPLACE FUNCTION public.handle_new_user()
-RETURNS trigger AS $$
-BEGIN
-  INSERT INTO public.profiles (id, email, first_name, last_name, role)
-  VALUES (
-    new.id, 
-    new.email, 
-    new.raw_user_meta_data->>'first_name', 
-    new.raw_user_meta_data->>'last_name', 
-    new.raw_user_meta_data->>'role'
-  );
-  RETURN new;
-END;
-$$ LANGUAGE plpgsql SECURITY DEFINER;
-
-/* 2. Enable the Trigger */
-DROP TRIGGER IF EXISTS on_auth_user_created ON auth.users;
-CREATE TRIGGER on_auth_user_created
-  AFTER INSERT ON auth.users
-  FOR EACH ROW EXECUTE FUNCTION public.handle_new_user();
-
-/* 3. Ensure Permissions are Open for Admins */
-DROP POLICY IF EXISTS "Admins manage all" ON profiles;
-CREATE POLICY "Admins manage all" ON profiles FOR ALL TO authenticated 
-USING (lower(auth.jwt() -> 'user_metadata' ->> 'role') IN ('admin', 'administrator'));`}
+                <div className="bg-black/60 p-6 rounded-2xl border border-slate-700 font-mono text-[10px] overflow-x-auto whitespace-pre mb-6 text-emerald-400">
+{`rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    match /users/{userId} {
+      allow read: if request.auth != null;
+      allow write: if request.auth != null && (request.auth.uid == userId || get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'administrator');
+    }
+    match /{document=**} {
+      allow read: if request.auth != null;
+      allow write: if request.auth != null && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'administrator';
+    }
+  }
+}`}
                 </div>
-                
-                <p className="text-[10px] text-slate-500 italic font-medium">Running these 3 commands will eliminate sync timeouts forever.</p>
+                <p className="text-[10px] text-slate-500 italic font-medium">Without these rules, the database will reject any admin creation attempts.</p>
             </div>
           )}
         </div>
@@ -203,7 +192,7 @@ USING (lower(auth.jwt() -> 'user_metadata' ->> 'role') IN ('admin', 'administrat
                         </button>
                      </div>
                   </td>
-                  <td className="px-8 py-5 text-xs font-mono text-slate-400">{t.employee_id || t.employeeId}</td>
+                  <td className="px-8 py-5 text-xs font-mono text-slate-400">{t.employeeId || t.id}</td>
                   <td className="px-8 py-5 text-right">
                     <button 
                       onClick={() => adminService.deleteTeacher(t.id).then(fetchData)}
@@ -236,7 +225,7 @@ USING (lower(auth.jwt() -> 'user_metadata' ->> 'role') IN ('admin', 'administrat
                 <input required placeholder="Last Name" className="w-full p-4 rounded-xl bg-slate-50 dark:bg-slate-800 border-0 outline-none focus:ring-2 focus:ring-indigo-600 dark:text-white" value={form.lastName} onChange={e => setForm({...form, lastName: e.target.value})} />
               </div>
               <input required type="email" placeholder="Email Address" className="w-full p-4 rounded-xl bg-slate-50 dark:bg-slate-800 border-0 outline-none focus:ring-2 focus:ring-indigo-600 dark:text-white" value={form.email} onChange={e => setForm({...form, email: e.target.value})} />
-              <input placeholder="Password (Optional - default: NextLearn123)" type="password" className="w-full p-4 rounded-xl bg-slate-50 dark:bg-slate-800 border-0 outline-none focus:ring-2 focus:ring-indigo-600 dark:text-white" value={form.password} onChange={e => setForm({...form, password: e.target.value})} />
+              <input placeholder="Password (Optional - default: Teacher1234)" type="password" className="w-full p-4 rounded-xl bg-slate-50 dark:bg-slate-800 border-0 outline-none focus:ring-2 focus:ring-indigo-600 dark:text-white" value={form.password} onChange={e => setForm({...form, password: e.target.value})} />
               <div className="flex gap-4 pt-4">
                 <button type="submit" disabled={loading} className="flex-1 py-4 bg-indigo-600 text-white rounded-2xl font-black">
                   {loading ? <Spinner size="sm" /> : 'Create Profile'}
