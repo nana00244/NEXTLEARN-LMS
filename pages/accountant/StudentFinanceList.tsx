@@ -103,22 +103,17 @@ export const StudentFinanceList: React.FC = () => {
 
   const filtered = feeRoster.filter(s => {
     const searchLower = search.toLowerCase();
-    
-    // Improved search: Includes Student Name, Admission Number, AND Class Name
     const matchesSearch = 
       (s.studentName || '').toLowerCase().includes(searchLower) || 
       (s.admissionNumber || '').toLowerCase().includes(searchLower) ||
       (s.class || '').toLowerCase().includes(searchLower);
 
     const matchesStatus = filter === 'all' || s.status?.toLowerCase() === filter.toLowerCase();
-    
-    // Fixed class filtering: Handle both string match (legacy) and ID match
     const matchesClass = classFilter === 'all' || s.classId === classFilter || s.class === classes.find(c => c.id === classFilter)?.name;
 
     return matchesSearch && matchesStatus && matchesClass;
   });
 
-  // LEDGER ZERO STATE DETECTOR
   const isZeroState = feeRoster.length > 0 && feeRoster.every(r => (r.totalDue || 0) === 0 && (r.paid || 0) === 0);
 
   if (loading) return <div className="p-20 flex justify-center"><Spinner size="lg" /></div>;
@@ -255,7 +250,7 @@ export const StudentFinanceList: React.FC = () => {
       {/* Collection Modal */}
       {selectedStudent && (
         <div className="fixed inset-0 z-[200] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-in fade-in">
-          <div className="bg-white dark:bg-slate-900 rounded-[2.5rem] p-10 max-w-lg w-full shadow-2xl border border-slate-100 dark:border-slate-800 overflow-y-auto max-h-[90vh]">
+          <div className="bg-white dark:bg-slate-900 rounded-[2.5rem] p-10 max-w-2xl w-full shadow-2xl border border-slate-100 dark:border-slate-800 overflow-y-auto max-h-[90vh] custom-scrollbar">
             {!receipt ? (
               <>
                 <div className="flex justify-between items-start mb-8">
@@ -266,53 +261,93 @@ export const StudentFinanceList: React.FC = () => {
                   <button onClick={() => setSelectedStudent(null)} className="w-10 h-10 rounded-full hover:bg-slate-100 dark:hover:bg-slate-800 flex items-center justify-center text-2xl text-slate-400">&times;</button>
                 </div>
 
-                <div className="bg-slate-50 dark:bg-slate-800/50 p-6 rounded-3xl mb-8 space-y-4 border border-slate-100 dark:border-slate-800">
-                  <div className="flex justify-between items-center"><span className="text-xs text-slate-500 font-bold">Student Name</span><span className="text-sm font-black">{selectedStudent.studentName}</span></div>
-                  <div className="flex justify-between items-center"><span className="text-xs text-slate-500 font-bold">Admission Number</span><span className="text-sm font-mono">{selectedStudent.admissionNumber}</span></div>
-                  <div className="pt-4 border-t border-slate-100 dark:border-slate-800 grid grid-cols-2 gap-4">
-                    <div className="text-center bg-white dark:bg-slate-900 p-3 rounded-2xl">
-                      <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Already Paid</p>
-                      <p className="text-lg font-black text-emerald-600">GH₵ {(selectedStudent.paid || 0).toLocaleString()}</p>
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 mb-8">
+                  {/* Student Info & Collection Form */}
+                  <div className="space-y-6">
+                    <div className="bg-slate-50 dark:bg-slate-800/50 p-6 rounded-3xl space-y-4 border border-slate-100 dark:border-slate-800">
+                      <div className="flex justify-between items-center"><span className="text-xs text-slate-500 font-bold">Student Name</span><span className="text-sm font-black">{selectedStudent.studentName}</span></div>
+                      <div className="flex justify-between items-center"><span className="text-xs text-slate-500 font-bold">Admission Number</span><span className="text-sm font-mono">{selectedStudent.admissionNumber}</span></div>
+                      <div className="pt-4 border-t border-slate-100 dark:border-slate-800 grid grid-cols-2 gap-4">
+                        <div className="text-center bg-white dark:bg-slate-900 p-3 rounded-2xl">
+                          <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Already Paid</p>
+                          <p className="text-lg font-black text-emerald-600">GH₵ {(selectedStudent.paid || 0).toLocaleString()}</p>
+                        </div>
+                        <div className="text-center bg-rose-50 dark:bg-rose-900/20 p-3 rounded-2xl border border-rose-100 dark:border-rose-900/30">
+                          <p className="text-[10px] font-black text-rose-500 uppercase tracking-widest mb-1">Balance Due</p>
+                          <p className="text-lg font-black text-rose-600">GH₵ {(selectedStudent.balance || 0).toLocaleString()}</p>
+                        </div>
+                      </div>
                     </div>
-                    <div className="text-center bg-rose-50 dark:bg-rose-900/20 p-3 rounded-2xl border border-rose-100 dark:border-rose-900/30">
-                      <p className="text-[10px] font-black text-rose-500 uppercase tracking-widest mb-1">Balance Due</p>
-                      <p className="text-lg font-black text-rose-600">GH₵ {(selectedStudent.balance || 0).toLocaleString()}</p>
+
+                    <form onSubmit={handleCollect} className="space-y-6">
+                      <div>
+                        <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2">Collection Amount (GH₵)</label>
+                        <input 
+                          required 
+                          type="number" 
+                          step="0.01" 
+                          max={selectedStudent.balance} 
+                          className="w-full p-5 rounded-2xl bg-slate-50 dark:bg-slate-800 border-0 outline-none focus:ring-2 focus:ring-indigo-600 text-2xl font-black dark:text-white" 
+                          placeholder="0.00"
+                          value={payAmount}
+                          onChange={e => setPayAmount(e.target.value)}
+                        />
+                      </div>
+
+                      <div>
+                        <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2">Payment Channel</label>
+                        <select className="w-full p-4 rounded-2xl bg-slate-50 dark:bg-slate-800 border-0 outline-none font-bold dark:text-white" value={payMethod} onChange={e => setPayMethod(e.target.value)}>
+                          <option value="bank_transfer">Bank Transfer</option>
+                          <option value="cash">Cash Collection</option>
+                          <option value="mobile_money">Mobile Money (MoMo)</option>
+                          <option value="cheque">Cheque</option>
+                        </select>
+                      </div>
+
+                      <div className="pt-4 flex gap-4">
+                        <button type="submit" disabled={processingPay || !payAmount} className="flex-1 py-5 bg-indigo-600 text-white rounded-2xl font-black uppercase tracking-widest shadow-xl">
+                          {processingPay ? <Spinner size="sm" /> : 'Finalize Collection'}
+                        </button>
+                      </div>
+                    </form>
+                  </div>
+
+                  {/* Fee Breakdown Component */}
+                  <div className="bg-slate-50 dark:bg-slate-800/50 p-6 rounded-3xl border border-slate-100 dark:border-slate-800">
+                    <h3 className="text-xs font-black text-slate-400 uppercase tracking-widest mb-6">Billable Breakdown</h3>
+                    <div className="space-y-4">
+                       {selectedStudent.applicableFees?.length > 0 ? (
+                         <>
+                           <div className="space-y-2 max-h-[350px] overflow-y-auto pr-2 custom-scrollbar">
+                             {selectedStudent.applicableFees.map((fee: any, idx: number) => (
+                               <div key={idx} className="p-3 bg-white dark:bg-slate-900 rounded-xl flex justify-between items-center shadow-sm border border-slate-100 dark:border-slate-700">
+                                  <div>
+                                     <p className="text-xs font-black text-slate-800 dark:text-slate-200">{fee.feeName}</p>
+                                     <span className={`px-1.5 py-0.5 rounded text-[8px] font-black uppercase tracking-tighter ${
+                                       fee.targetScope === 'individual_students' ? 'bg-amber-100 text-amber-600' :
+                                       fee.targetScope === 'specific_class' ? 'bg-indigo-100 text-indigo-600' : 'bg-emerald-100 text-emerald-600'
+                                     }`}>
+                                       {fee.targetScope === 'individual_students' ? 'Individual' : 
+                                        fee.targetScope === 'specific_class' ? 'Class' : 'Global'}
+                                     </span>
+                                  </div>
+                                  <p className="text-xs font-black text-indigo-600">GH₵ {fee.amount.toLocaleString()}</p>
+                               </div>
+                             ))}
+                           </div>
+                           <div className="pt-4 mt-4 border-t border-slate-200 dark:border-slate-700 flex justify-between items-center px-2">
+                              <span className="text-[10px] font-black text-slate-400 uppercase">Total Billable</span>
+                              <span className="text-sm font-black text-slate-900 dark:text-white">GH₵ {selectedStudent.totalDue.toLocaleString()}</span>
+                           </div>
+                         </>
+                       ) : (
+                         <div className="py-20 text-center">
+                            <p className="text-xs text-slate-400 italic">No billable fees configured.</p>
+                         </div>
+                       )}
                     </div>
                   </div>
                 </div>
-
-                <form onSubmit={handleCollect} className="space-y-6">
-                  <div>
-                    <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2">Collection Amount (GH₵)</label>
-                    <input 
-                      required 
-                      type="number" 
-                      step="0.01" 
-                      max={selectedStudent.balance} 
-                      className="w-full p-5 rounded-2xl bg-slate-50 dark:bg-slate-800 border-0 outline-none focus:ring-2 focus:ring-indigo-600 text-2xl font-black dark:text-white" 
-                      placeholder="0.00"
-                      value={payAmount}
-                      onChange={e => setPayAmount(e.target.value)}
-                    />
-                  </div>
-
-                  <div>
-                    <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2">Payment Channel</label>
-                    <select className="w-full p-4 rounded-2xl bg-slate-50 dark:bg-slate-800 border-0 outline-none font-bold dark:text-white" value={payMethod} onChange={e => setPayMethod(e.target.value)}>
-                       <option value="bank_transfer">Bank Transfer</option>
-                       <option value="cash">Cash Collection</option>
-                       <option value="mobile_money">Mobile Money (MoMo)</option>
-                       <option value="cheque">Cheque</option>
-                    </select>
-                  </div>
-
-                  <div className="pt-4 flex gap-4">
-                    <button type="submit" disabled={processingPay || !payAmount} className="flex-1 py-5 bg-indigo-600 text-white rounded-2xl font-black uppercase tracking-widest shadow-xl">
-                       {processingPay ? <Spinner size="sm" /> : 'Finalize Collection'}
-                    </button>
-                    <button type="button" onClick={() => setSelectedStudent(null)} className="px-8 py-5 bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 rounded-2xl font-bold uppercase tracking-widest">Discard</button>
-                  </div>
-                </form>
               </>
             ) : (
               <div className="text-center animate-in zoom-in-95">

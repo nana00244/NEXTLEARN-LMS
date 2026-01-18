@@ -22,6 +22,7 @@ export const financeService = {
   /**
    * MASTER SYNC: RECONCILE LEDGER WITH BILLING RULES
    * Updates totalDue based on active components while preserving existing 'paid' totals.
+   * Now supports: All Classes, Specific Class, and Individual Student scopes.
    */
   syncAllStudentFees: async () => {
     console.log('=== [Finance] LEDGER SYNCHRONIZATION STARTED ===');
@@ -63,9 +64,19 @@ export const financeService = {
         
         if (feeComponents.length > 0) {
           feeComponents.forEach(comp => {
-            const applies = comp.applicableClass === 'All Classes' || 
-                            comp.classId === student.classId || 
-                            comp.applicableClass === className;
+            let applies = false;
+            
+            // Scope-based assignment logic
+            if (comp.targetScope === 'individual_students') {
+              // Priority 1: Individual assignments
+              applies = comp.targetStudents?.includes(student.id);
+            } else if (comp.targetScope === 'specific_class') {
+              // Priority 2: Specific Class assignments
+              applies = comp.classId === student.classId || comp.applicableClass === className;
+            } else {
+              // Priority 3: All Classes (Default/Legacy)
+              applies = comp.applicableClass === 'All Classes' || comp.targetScope === 'all_classes';
+            }
             
             if (applies && comp.isActive !== false) {
               const amount = parseFloat(comp.amount) || 0;
@@ -73,7 +84,9 @@ export const financeService = {
               applicableFees.push({
                 feeId: comp.id,
                 feeName: comp.feeName,
-                amount: amount
+                amount: amount,
+                category: comp.category,
+                targetScope: comp.targetScope || 'all_classes'
               });
             }
           });
@@ -99,7 +112,7 @@ export const financeService = {
           studentName,
           admissionNumber: student.admissionNumber || 'ID-RESERVED',
           class: className,
-          classId: student.classId || '', // Persist ID for filtering
+          classId: student.classId || '',
           totalDue,
           paid, 
           balance,
@@ -126,9 +139,6 @@ export const financeService = {
     }
   },
 
-  /**
-   * MASTER SYSTEM RESET: FOR NEW TERMS
-   */
   resetFinancialSystem: async (operatorId: string, operatorName: string) => {
     console.log('=== [Finance] INITIATING FULL SYSTEM WIPE ===');
     try {
@@ -228,14 +238,15 @@ export const financeService = {
 
   createFeeComponent: async (data: any, user: User) => {
     try {
-      await addDoc(collection(db, "fee_components"), {
+      const payload = {
         ...data,
         amount: parseFloat(data.amount),
         currency: 'GH₵',
         createdBy: user.id,
         createdAt: serverTimestamp(),
         isActive: true
-      });
+      };
+      await addDoc(collection(db, "fee_components"), payload);
       await financeService.syncAllStudentFees();
     } catch (error: any) { return handleFirestoreError(error, "createFeeComponent"); }
   },
