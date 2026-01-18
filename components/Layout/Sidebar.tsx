@@ -50,8 +50,8 @@ export const Sidebar: React.FC<SidebarProps> = ({ isOpen }) => {
 
       <div className="absolute bottom-6 left-6 right-6">
         <div className="bg-slate-50 dark:bg-slate-800/50 p-4 rounded-xl border border-slate-100 dark:border-slate-800 transition-colors">
-          <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Build Status</p>
-          <p className="text-xs font-bold mt-1 text-indigo-600">Stable - bv3</p>
+          <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Platform Engine</p>
+          <p className="text-xs font-bold mt-1 text-indigo-600">Powered by NextLearn</p>
         </div>
       </div>
     </aside>
