@@ -3,6 +3,7 @@ import { adminService } from '../../services/adminService';
 import { Spinner } from '../../components/UI/Spinner';
 import { Alert } from '../../components/UI/Alert';
 import { Class } from '../../types';
+import { BulkImportModal } from '../../components/admin/BulkImportModal';
 
 export const StudentList: React.FC = () => {
   const [students, setStudents] = useState<any[]>([]);
@@ -14,6 +15,7 @@ export const StudentList: React.FC = () => {
   const [showEnrolModal, setShowEnrolModal] = useState(false);
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [showPasswordModal, setShowPasswordModal] = useState(false);
+  const [showBulkModal, setShowBulkModal] = useState(false);
   
   // State for targets
   const [studentToManage, setStudentToManage] = useState<any | null>(null);
@@ -134,6 +136,14 @@ export const StudentList: React.FC = () => {
     }
   };
 
+  const handleBulkSuccess = (count?: number) => {
+    setShowBulkModal(false);
+    if (count && count > 0) {
+      setAlert({ type: 'success', message: `Successfully imported ${count} students.` });
+      fetchData();
+    }
+  };
+
   const filtered = students.filter(s => 
     `${s.user?.firstName} ${s.user?.lastName}`.toLowerCase().includes(searchTerm.toLowerCase()) ||
     s.admissionNumber?.toLowerCase().includes(searchTerm.toLowerCase())
@@ -146,12 +156,20 @@ export const StudentList: React.FC = () => {
           <h1 className="text-3xl font-black text-slate-900 dark:text-white">Student Roster</h1>
           <p className="text-slate-500">Academic Lifecycle Management</p>
         </div>
-        <button 
-          onClick={() => { setIsEditing(false); setStudentToManage(null); setShowEnrolModal(true); }}
-          className="btn btn-primary px-8"
-        >
-          ➕ Enroll New Student
-        </button>
+        <div className="flex gap-3">
+          <button 
+            onClick={() => setShowBulkModal(true)}
+            className="btn btn-secondary px-6"
+          >
+            📂 Bulk Import
+          </button>
+          <button 
+            onClick={() => { setIsEditing(false); setStudentToManage(null); setShowEnrolModal(true); }}
+            className="btn btn-primary px-8"
+          >
+            ➕ Enroll New Student
+          </button>
+        </div>
       </header>
 
       {alert && <Alert type={alert.type} message={alert.message} onClose={() => setAlert(null)} />}
@@ -306,6 +324,13 @@ export const StudentList: React.FC = () => {
           </div>
         </div>
       )}
+
+      {/* Bulk Import Modal */}
+      <BulkImportModal 
+        isOpen={showBulkModal} 
+        onClose={handleBulkSuccess} 
+        classes={classes} 
+      />
     </div>
   );
 };

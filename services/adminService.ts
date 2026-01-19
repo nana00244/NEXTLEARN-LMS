@@ -221,6 +221,42 @@ export const adminService = {
     return { credentials: { email: userData.email, password } };
   },
 
+  addStudentsBulk: async (studentList: { studentData: any; userData: any }[]) => {
+    const batch = writeBatch(db);
+    const credentialsList: { email: string; password: string }[] = [];
+
+    for (const entry of studentList) {
+      const userId = "u_" + Math.random().toString(36).substr(2, 9);
+      const studentId = "s_" + Math.random().toString(36).substr(2, 9);
+      const password = entry.userData.password || "NextLearn" + Math.floor(1000 + Math.random() * 9000);
+
+      const userRef = doc(db, "users", userId);
+      batch.set(userRef, {
+        ...entry.userData,
+        id: userId,
+        password,
+        role: 'student',
+        isActive: true,
+        createdAt: serverTimestamp(),
+        themePreference: 'light'
+      });
+
+      const studentRef = doc(db, "students", studentId);
+      batch.set(studentRef, {
+        ...entry.studentData,
+        id: studentId,
+        userId,
+        createdAt: serverTimestamp()
+      });
+
+      credentialsList.push({ email: entry.userData.email, password });
+    }
+
+    await batch.commit();
+    await financeService.syncAllStudentFees();
+    return credentialsList;
+  },
+
   addStaff: async (data: any) => {
     const userId = "u_" + Math.random().toString(36).substr(2, 9);
     const password = data.password || data.role.charAt(0).toUpperCase() + data.role.slice(1) + Math.floor(1000 + Math.random() * 9000);
