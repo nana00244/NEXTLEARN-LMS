@@ -28,6 +28,12 @@ export const StudentFinanceList: React.FC = () => {
   const [processingPay, setProcessingPay] = useState(false);
   const [receipt, setReceipt] = useState<any>(null);
 
+  // FEATURE: Fee Adjustment State
+  const [adjustmentTarget, setAdjustmentTarget] = useState<any>(null);
+  const [newTotalAmount, setNewTotalAmount] = useState('');
+  const [adjustmentReason, setAdjustmentReason] = useState('');
+  const [isAdjusting, setIsAdjusting] = useState(false);
+
   useEffect(() => {
     const fetchData = async () => {
       const classesData = await financeService.getAllClasses();
@@ -84,6 +90,43 @@ export const StudentFinanceList: React.FC = () => {
       alert(err.message);
     } finally {
       setProcessingPay(false);
+    }
+  };
+
+  const handleAdjustFee = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!adjustmentTarget || !newTotalAmount || parseFloat(newTotalAmount) < 0) return;
+    
+    setIsAdjusting(true);
+    try {
+      await financeService.applyFeeAdjustment(
+        adjustmentTarget.studentId, 
+        parseFloat(newTotalAmount), 
+        adjustmentReason,
+        user
+      );
+      setAlert({ type: 'success', message: `Fee adjustment applied for ${adjustmentTarget.studentName}.` });
+      setAdjustmentTarget(null);
+      setNewTotalAmount('');
+      setAdjustmentReason('');
+    } catch (err: any) {
+      setAlert({ type: 'error', message: err.message });
+    } finally {
+      setIsAdjusting(false);
+    }
+  };
+
+  const handleResetToDefault = async () => {
+    if (!adjustmentTarget) return;
+    setIsAdjusting(true);
+    try {
+      await financeService.resetFeeToDefault(adjustmentTarget.studentId, user);
+      setAlert({ type: 'success', message: `Custom fee override removed for ${adjustmentTarget.studentName}.` });
+      setAdjustmentTarget(null);
+    } catch (err: any) {
+      setAlert({ type: 'error', message: err.message });
+    } finally {
+      setIsAdjusting(false);
     }
   };
 
@@ -192,12 +235,32 @@ export const StudentFinanceList: React.FC = () => {
             </thead>
             <tbody>
               {filtered.map(s => (
-                <tr key={s.id} className="hover:bg-slate-50 dark:hover:bg-slate-800/30 transition-colors">
+                <tr key={s.id} className="hover:bg-slate-50 dark:hover:bg-slate-800/30 transition-colors group">
                   <td>
-                    <p className="font-bold text-slate-900 dark:text-white">{s.studentName}</p>
-                    <p className="text-[10px] text-slate-400 font-mono">{s.admissionNumber} • {s.class}</p>
+                    <div className="flex items-center gap-3">
+                       <div>
+                          <p className="font-bold text-slate-900 dark:text-white">{s.studentName}</p>
+                          <p className="text-[10px] text-slate-400 font-mono">{s.admissionNumber} • {s.class}</p>
+                       </div>
+                       {s.isCustomFee && (
+                         <span className="px-1.5 py-0.5 bg-amber-50 text-amber-600 rounded text-[8px] font-black uppercase" title={`Custom Adjustment: ${s.adjustmentReason || 'Manual override'}`}>Custom</span>
+                       )}
+                    </div>
                   </td>
-                  <td className="text-right font-semibold text-slate-600 dark:text-slate-400">GH₵ {(s.totalDue || 0).toLocaleString()}</td>
+                  <td className="text-right font-semibold text-slate-600 dark:text-slate-400">
+                    <div className="flex items-center justify-end gap-2">
+                       <span>GH₵ {(s.totalDue || 0).toLocaleString()}</span>
+                       {user?.role === 'accountant' && (
+                         <button 
+                           onClick={() => { setAdjustmentTarget(s); setNewTotalAmount(s.totalDue.toString()); setAdjustmentReason(s.adjustmentReason || ''); }} 
+                           className="opacity-0 group-hover:opacity-100 p-1 text-indigo-600 hover:bg-indigo-50 dark:hover:bg-indigo-900/30 rounded transition-all"
+                           title="Adjust individual fee"
+                         >
+                           ✏️
+                         </button>
+                       )}
+                    </div>
+                  </td>
                   <td className="text-right font-bold text-emerald-600 dark:text-emerald-500">GH₵ {(s.paid || 0).toLocaleString()}</td>
                   <td className="text-right font-black text-rose-600 dark:text-rose-500">GH₵ {(s.balance || 0).toLocaleString()}</td>
                   <td className="text-center">
@@ -243,6 +306,69 @@ export const StudentFinanceList: React.FC = () => {
                 <button onClick={handleManualSync} className="flex-1 py-4 bg-indigo-600 text-white rounded-2xl font-black uppercase tracking-widest shadow-lg">Run Sync</button>
                 <button onClick={() => setShowSyncConfirm(false)} className="flex-1 py-4 bg-slate-100 dark:bg-slate-800 text-slate-600 rounded-2xl font-bold uppercase tracking-widest">Cancel</button>
              </div>
+          </div>
+        </div>
+      )}
+
+      {/* FEATURE: Fee Adjustment Modal */}
+      {adjustmentTarget && (
+        <div className="fixed inset-0 z-[250] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-md animate-in fade-in">
+          <div className="bg-white dark:bg-slate-900 rounded-[2.5rem] p-10 max-w-md w-full shadow-2xl border border-slate-100 dark:border-slate-800 animate-in zoom-in-95 duration-200">
+            <h2 className="text-2xl font-black text-slate-900 dark:text-white mb-2">Adjust Student Fee</h2>
+            <p className="text-sm text-slate-500 mb-8 font-medium">Modify total billed amount for <strong>{adjustmentTarget.studentName}</strong></p>
+            
+            <form onSubmit={handleAdjustFee} className="space-y-6">
+               <div className="grid grid-cols-2 gap-4">
+                  <div className="p-4 bg-slate-50 dark:bg-slate-800 rounded-2xl">
+                     <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Current</p>
+                     <p className="text-sm font-bold">GH₵ {adjustmentTarget.totalDue.toLocaleString()}</p>
+                  </div>
+                  <div className="p-4 bg-emerald-50 dark:bg-emerald-900/20 rounded-2xl border border-emerald-100 dark:border-emerald-800">
+                     <p className="text-[10px] font-black text-emerald-600 uppercase tracking-widest mb-1">New Total</p>
+                     <p className="text-sm font-bold">GH₵ {parseFloat(newTotalAmount || '0').toLocaleString()}</p>
+                  </div>
+               </div>
+
+               <div>
+                  <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2">Adjusted Amount (GH₵)</label>
+                  <input 
+                    required 
+                    type="number" 
+                    step="0.01"
+                    className="w-full p-4 rounded-2xl bg-slate-50 dark:bg-slate-800 border-0 outline-none focus:ring-2 focus:ring-indigo-600 text-xl font-black dark:text-white" 
+                    value={newTotalAmount}
+                    onChange={e => setNewTotalAmount(e.target.value)}
+                  />
+               </div>
+
+               <div>
+                  <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2">Reason for Adjustment</label>
+                  <textarea 
+                    required
+                    rows={3}
+                    className="w-full p-4 rounded-2xl bg-slate-50 dark:bg-slate-800 border-0 outline-none focus:ring-2 focus:ring-indigo-600 text-sm font-medium dark:text-white resize-none" 
+                    placeholder="e.g. Scholarship applied, sibling discount..."
+                    value={adjustmentReason}
+                    onChange={e => setAdjustmentReason(e.target.value)}
+                  />
+               </div>
+
+               <div className="flex flex-col gap-3 pt-4">
+                  <button type="submit" disabled={isAdjusting} className="w-full py-4 bg-indigo-600 text-white rounded-2xl font-black uppercase tracking-widest shadow-xl">
+                    {isAdjusting ? <Spinner size="sm" /> : 'Apply Adjustment'}
+                  </button>
+                  
+                  {adjustmentTarget.isCustomFee && (
+                    <button type="button" onClick={handleResetToDefault} className="w-full py-3 bg-rose-50 text-rose-600 rounded-xl font-bold text-xs uppercase tracking-widest hover:bg-rose-100 transition-all">
+                      Reset to Default Components
+                    </button>
+                  )}
+                  
+                  <button type="button" onClick={() => setAdjustmentTarget(null)} className="w-full py-4 bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 rounded-2xl font-bold uppercase tracking-widest">
+                    Cancel
+                  </button>
+               </div>
+            </form>
           </div>
         </div>
       )}

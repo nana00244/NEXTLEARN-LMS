@@ -23,6 +23,7 @@ export const financeService = {
    * MASTER SYNC: RECONCILE LEDGER WITH BILLING RULES
    * Updates totalDue based on active components while preserving existing 'paid' totals.
    * Now supports: All Classes, Specific Class, and Individual Student scopes.
+   * INTEGRATION SAFEGUARD: respects 'totalDueOverride' for custom billed amounts.
    */
   syncAllStudentFees: async () => {
     console.log('=== [Finance] LEDGER SYNCHRONIZATION STARTED ===');
@@ -62,19 +63,16 @@ export const financeService = {
         let totalDue = 0;
         const applicableFees: any[] = [];
         
+        // Calculate components-based fee
         if (feeComponents.length > 0) {
           feeComponents.forEach(comp => {
             let applies = false;
             
-            // Scope-based assignment logic
             if (comp.targetScope === 'individual_students') {
-              // Priority 1: Individual assignments
               applies = comp.targetStudents?.includes(student.id);
             } else if (comp.targetScope === 'specific_class') {
-              // Priority 2: Specific Class assignments
               applies = comp.classId === student.classId || comp.applicableClass === className;
             } else {
-              // Priority 3: All Classes (Default/Legacy)
               applies = comp.applicableClass === 'All Classes' || comp.targetScope === 'all_classes';
             }
             
@@ -90,6 +88,12 @@ export const financeService = {
               });
             }
           });
+        }
+
+        // FEATURE ADDITION: Apply Manual Override if present
+        const hasOverride = currentSummary.totalDueOverride !== undefined && currentSummary.totalDueOverride !== null;
+        if (hasOverride) {
+          totalDue = parseFloat(currentSummary.totalDueOverride);
         }
 
         const paid = parseFloat(currentSummary.paid) || 0;
@@ -108,6 +112,7 @@ export const financeService = {
 
         const summaryRef = doc(db, "student_fees", student.id);
         const summaryData = {
+          ...currentSummary, // Preserve custom flags
           studentId: student.id,
           studentName,
           admissionNumber: student.admissionNumber || 'ID-RESERVED',
@@ -119,7 +124,8 @@ export const financeService = {
           status,
           applicableFees,
           lastSyncedAt: serverTimestamp(),
-          updatedAt: serverTimestamp()
+          updatedAt: serverTimestamp(),
+          isCustomFee: hasOverride
         };
 
         batch.set(summaryRef, summaryData);
@@ -136,6 +142,62 @@ export const financeService = {
       return { success: true };
     } catch (error: any) {
       return handleFirestoreError(error, "syncAllStudentFees");
+    }
+  },
+
+  /**
+   * NEW FEATURE: Apply manual fee adjustment to a student's record
+   * This is a separate function to ensure zero impact on existing sync logic.
+   */
+  applyFeeAdjustment: async (studentId: string, newTotal: number, reason: string, accountant: any) => {
+    try {
+      const summaryRef = doc(db, "student_fees", studentId);
+      const snap = await getDoc(summaryRef);
+      if (!snap.exists()) throw new Error("Financial record not found.");
+      
+      const current = snap.data();
+      const oldTotal = current.totalDue;
+      
+      await updateDoc(summaryRef, {
+        totalDueOverride: newTotal,
+        totalDue: newTotal,
+        balance: Math.max(0, newTotal - (current.paid || 0)),
+        isCustomFee: true,
+        adjustmentReason: reason,
+        adjustedAt: serverTimestamp(),
+        adjustedBy: accountant.id
+      });
+
+      // Audit Trail
+      await addDoc(collection(db, "accountant_activity"), {
+        accountantId: accountant.id,
+        action: 'FEE_ADJUSTMENT',
+        details: `Adjusted ${current.studentName} billed amount from GH₵${oldTotal} to GH₵${newTotal}. Reason: ${reason}`,
+        timestamp: serverTimestamp()
+      });
+
+      return { success: true };
+    } catch (error: any) {
+      return handleFirestoreError(error, "applyFeeAdjustment");
+    }
+  },
+
+  /**
+   * Reset a student's fee to the default calculated components
+   */
+  resetFeeToDefault: async (studentId: string, accountant: any) => {
+    try {
+      const summaryRef = doc(db, "student_fees", studentId);
+      await updateDoc(summaryRef, {
+        totalDueOverride: null,
+        isCustomFee: false,
+        adjustmentReason: 'Reset to system default'
+      });
+      
+      await financeService.syncAllStudentFees(); // Re-calculate
+      return { success: true };
+    } catch (error: any) {
+      return handleFirestoreError(error, "resetFeeToDefault");
     }
   },
 
@@ -164,7 +226,9 @@ export const financeService = {
           applicableFees: [],
           resetAt: serverTimestamp(),
           updatedAt: serverTimestamp(),
-          note: 'Master System Reset Performed'
+          note: 'Master System Reset Performed',
+          totalDueOverride: null,
+          isCustomFee: false
         });
       });
 
